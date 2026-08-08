@@ -12,3 +12,5 @@ library;
 export 'package:pen_reveal/pen_reveal.dart';
 
 export 'src/image_bytes.dart';
+export 'src/reveal_preparer.dart';
+export 'src/sequential_reveal.dart';

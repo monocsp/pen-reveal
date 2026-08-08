@@ -1,0 +1,49 @@
+name: CI
+
+# ⚠️ 코퍼스(정본 그림 10종)는 디자인 자산이라 이 레포에 없다. 그래서 여기서 도는 것은
+#   **합성 입력 테스트뿐**이고, `@Tags(['corpus'])` 테스트는 `dart_test.yaml` 의 skip
+#   설정으로 자동으로 빠진다. 실측 대조는 자산을 갖춘 로컬에서 `dart test -t corpus`.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  core:
+    name: pen_reveal (순수 Dart)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/pen_reveal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - run: dart pub get
+      - name: 서식
+        run: dart format --output=none --set-exit-if-changed .
+      - name: 정적 분석
+        run: dart analyze --fatal-infos
+      - name: 테스트
+        run: dart test
+
+  flutter:
+    name: pen_reveal_flutter
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/pen_reveal_flutter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - name: 서식
+        run: dart format --output=none --set-exit-if-changed .
+      - name: 정적 분석
+        run: flutter analyze
+      - name: 테스트
+        run: flutter test

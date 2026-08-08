@@ -1,0 +1,9 @@
+tags:
+  # 정본 그림 10종(base/composed)이 있어야 도는 테스트. 자산은 디자인 원본이라
+  #   public 레포에 없다(`.gitignore` §디자인 자산) — 그래서 공개 CI 에서는 자동으로
+  #   빠지고, 자산을 갖춘 로컬에서만 돈다. 빠뜨린 게 아니라 설계다.
+  corpus:
+    skip: '코퍼스 자산이 없다 — corpus/maps/ 를 채운 뒤 `dart test -t corpus` 로 돌린다'
+
+  # 버그를 잡은 뒤 경로를 잠근 테스트. 언제나 돈다.
+  regression:

@@ -6,6 +6,7 @@
 //   `test/resampler_golden_test.dart` 가 "PNG → RGBA 가 여전히 그 바이트인가"를 따로 잠근다.
 //   그 테스트가 빨개지면 알고리즘이 아니라 **엔진이** 바뀐 것이다.
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/painting.dart';
@@ -25,6 +26,9 @@ Future<Uint8List> rgbaAt(ui.Image src, int width, int height) async {
   try {
     final resized = await picture.toImage(width, height);
     try {
+      // rawRgba 는 기본값이지만 **명시한다** — 코어의 diff 는 채널 순서가 RGBA 라고
+      //   가정하고 짜여 있어서, 기본값이 바뀌면 조용히 색이 뒤바뀐다.
+      // ignore: avoid_redundant_argument_values
       final data = await resized.toByteData(format: ui.ImageByteFormat.rawRgba);
       if (data == null) {
         throw StateError('리샘플한 이미지에서 픽셀을 못 읽었다(${width}x$height)');
@@ -42,14 +46,29 @@ Future<Uint8List> rgbaAt(ui.Image src, int width, int height) async {
 /// 원본 비율을 지키면서 **긴 변만** [longSide] 에 맞춘 크기.
 ///
 ///   ⚠️ 정사각(`longSide`×`longSide`)이 아니다 — 억지로 맞추면 그림이 찌그러지고,
-///   찌그러진 그림에서 잰 길 길이는 코퍼스와 비교할 수 없게 된다.
-({int width, int height}) fitLongSide(ui.Image image, int longSide) {
-  final wide = image.width >= image.height;
+///   찌그러진 그림에서 잰 획 길이는 코퍼스와 비교할 수 없게 된다.
+///
+///   `ui.Image` 가 아니라 정수를 받는다 — 엔진 없이 테스트할 수 있어야 하고, 이 계산에
+///   필요한 것은 크기뿐이다. 이미지에서 부르려면 [fitImageLongSide] 를 쓴다.
+({int width, int height}) fitLongSide({
+  required int width,
+  required int height,
+  required int longSide,
+}) {
+  final wide = width >= height;
   return (
-    width: wide ? longSide : (longSide * image.width / image.height).round(),
-    height: wide ? (longSide * image.height / image.width).round() : longSide,
+    width: wide ? longSide : (longSide * width / height).round(),
+    height: wide ? (longSide * height / width).round() : longSide,
   );
 }
+
+/// [fitLongSide] 를 [ui.Image] 크기에 적용한 것.
+({int width, int height}) fitImageLongSide(ui.Image image, int longSide) =>
+    fitLongSide(
+      width: image.width,
+      height: image.height,
+      longSide: longSide,
+    );
 
 /// 회색 RGBA 바이트를 텍스처로.
 Future<ui.Image> textureFromRgba(Uint8List rgba, int width, int height) {

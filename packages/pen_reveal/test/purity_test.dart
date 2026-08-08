@@ -135,5 +135,102 @@ void main() {
         reason: '임계 행렬을 sharpness.dart 밖에서 만들고 있다: $owners',
       );
     });
+
+    test('표현 층은 구조 층을 안다 — 화살표는 한 방향이고, 끊겨도 안 된다', () {
+      final policy =
+          _code(File('$_timingDir/timing_policy.dart').readAsStringSync());
+      expect(
+        policy.contains('reveal_plan.dart'),
+        isTrue,
+        reason: '정책이 계획을 안 본다 — 화살표가 끊겼다',
+      );
+      expect(policy.contains('Duration'), isTrue, reason: '시간은 여기 있어야 한다');
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 반대 방향도 잠근다. 위 단언들은 "구조 층이 시간을 모른다" 만 보는데, 실제로 무너진 적이
+  //   있는 쪽은 **그 반대**였다 — 표현 층이 픽셀 길이를 다시 읽고 코퍼스 기준·압축 곡선을
+  //   자기 안에 복제하는 것. 그러면 밴드를 바꿀 때마다 곡선이 같이 흔들려 "t=0.5 = 밴드의
+  //   절반" 이라는 약속이 깨지는데, 시간 시험은 전부 초록이다(양쪽이 같이 틀리니까).
+  // ─────────────────────────────────────────────────────────────────────────
+  group('반대쪽 — 표현 층은 픽셀 길이를 모른다', () {
+    const policyPath = '$_timingDir/timing_policy.dart';
+    const profilePath = '$_planDir/length_profile.dart';
+
+    /// 코퍼스를 잰 숫자들 — 이 값이 사는 곳은 [profilePath] 하나뿐이어야 한다.
+    const corpusLiterals = <String>['124.5', '905.7'];
+
+    test('정책은 길 픽셀이 아니라 0~1 을 읽는다', () {
+      final code = _code(File(policyPath).readAsStringSync());
+      expect(
+        code.contains('_primaryMillis(segment.relativeLength'),
+        isTrue,
+        reason: '주 획 시간이 다시 픽셀에서 나온다',
+      );
+      expect(
+        code.contains('_primaryMillis(segment.measure'),
+        isFalse,
+        reason: 'measure(픽셀)는 문구·X 의 자다 — 주 획에 쓰면 정규화가 무의미해진다',
+      );
+    });
+
+    test('정책에 코퍼스 기준·압축 곡선이 다시 생기지 않았다', () {
+      final code = _code(File(policyPath).readAsStringSync());
+      for (final gone in const [
+        'math.pow',
+        'referenceLongSide',
+        'compression',
+        ...corpusLiterals,
+      ]) {
+        expect(
+          code.contains(gone),
+          isFalse,
+          reason: '길이의 자가 표현 층으로 되돌아왔다(`$gone`) — 기준은 구조 층이 소유한다',
+        );
+      }
+    });
+
+    test('코퍼스 상수는 length_profile.dart 안에서도 한 번씩만 나온다', () {
+      // 같은 파일 안에서 두 번 적히면 한쪽만 고치는 사고가 다시 가능해진다.
+      final source = _code(File(profilePath).readAsStringSync());
+      for (final literal in const ['124.5', '905.7', '0.35']) {
+        expect(
+          RegExp(RegExp.escape(literal)).allMatches(source).length,
+          1,
+          reason: '$literal 이 정규화 파일 안에서 여러 번 나온다 — 출처가 갈렸다',
+        );
+      }
+    });
+
+    test('표현 층 어느 파일에도 코퍼스 숫자가 한 톨도 없다', () {
+      for (final file in _dartFiles(_timingDir)) {
+        final code = _code(file.readAsStringSync());
+        for (final literal in corpusLiterals) {
+          expect(
+            code.contains(literal),
+            isFalse,
+            reason: '${file.path}: 길이의 자($literal)가 표현 층에 새어 나왔다',
+          );
+        }
+      }
+    });
+
+    test('시간 시험의 기대값은 리터럴이다 — 공식을 다시 쓰면 아무것도 안 잡는다', () {
+      // 지수 함수를 못 부르면 기대값을 공식으로 다시 쓸 수가 없다. (이 검사를 그 파일 안에
+      //   두면 검사 문자열 자체가 걸려 영영 빨갛다 — 그래서 여기 있다.)
+      const path = 'test/timing/timing_policy_test.dart';
+      final file = File(path);
+      expect(
+        file.existsSync(),
+        isTrue,
+        reason: '$path 가 없다 — 시간 정책 시험이 사라졌다',
+      );
+      expect(
+        file.readAsStringSync().contains("import 'dart:math'"),
+        isFalse,
+        reason: '$path 가 지수 함수를 부른다 — 구현이 곧 기대값이 됐을 수 있다',
+      );
+    });
   });
 }

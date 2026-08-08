@@ -99,4 +99,6 @@ cd packages/pen_reveal_flutter && flutter pub get && flutter analyze && flutter 
 
 ## 상태
 
-아직 초기다. `pen_reveal`(순수 코어)은 완성됐고, `pen_reveal_flutter` 는 이미지 경계까지 올라와 있다. 렌더·데모·코퍼스 이관·GIF/MP4 exporter 가 남았다.
+`pen_reveal`(순수 코어)과 `pen_reveal_flutter`(엔진 경계 + 합성 렌더) 둘 다 돌아간다 — 굽고(`RevealPreparer`) 그리는(`SequentialReveal`) 길이 끝까지 이어져 있고, 두 패키지 모두 CI 게이트가 초록이다.
+
+`example/` 데모와 GIF/MP4 exporter 가 남았다. 코퍼스 대조 테스트는 자산이 있는 로컬에서만 도는 상태다(위 §코퍼스).

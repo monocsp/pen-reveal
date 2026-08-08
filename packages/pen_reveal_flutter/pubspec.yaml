@@ -1,0 +1,22 @@
+name: pen_reveal_flutter
+description: >-
+  pen_reveal 의 Flutter 경계 — ui.Image 를 RGBA 로 뜨고, 순서 텍스처를 굽고,
+  base/composed/reveal 세 장을 알파 임계로 합성해 그린다.
+version: 0.1.0
+repository: https://github.com/monocsp/pen-reveal
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+  flutter: '>=3.24.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  pen_reveal:
+    path: ../pen_reveal
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: ^6.0.0

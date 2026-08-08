@@ -1,0 +1,14 @@
+name: pen_reveal
+description: >-
+  완성된 그림 두 장(바닥/최종)의 차이를 읽어 "손으로 그리는 순서"를 복원하고,
+  그 순서를 재생 가능한 시간축 텍스처로 굽는다. Flutter 무의존 순수 Dart.
+version: 0.1.0
+repository: https://github.com/monocsp/pen-reveal
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+
+dev_dependencies:
+  test: ^1.25.0
+  very_good_analysis: ^6.0.0

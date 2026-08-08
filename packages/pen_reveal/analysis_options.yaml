@@ -1,0 +1,18 @@
+include: package:very_good_analysis/analysis_options.yaml
+
+analyzer:
+  exclude:
+    - lib/src/plan/generated/**
+  errors:
+    # 굽기 루프는 21만 픽셀을 훑는다 — 지역 변수 한 글자 이름이 오히려 읽기 쉽다.
+    non_constant_identifier_names: ignore
+
+linter:
+  rules:
+    # 이 패키지의 주석은 한국어 산문이라 줄 길이를 문장 단위로 맞춘다.
+    lines_longer_than_80_chars: false
+    # 공개 API 문서는 있지만 private 헬퍼까지 강제하지 않는다.
+    public_member_api_docs: false
+    # `RevealEase`·`RevealTimingPolicy` 는 일부러 한 메서드 전략 인터페이스다 —
+    #   갈아 끼우는 것이 존재 이유라 top-level 함수로 바꾸면 주입이 사라진다.
+    one_member_abstracts: false

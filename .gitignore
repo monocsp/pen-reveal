@@ -1,0 +1,40 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# 디자인 자산 — 이 레포는 public 이다. 디자이너 원본과 그 **픽셀 파생물**은 절대
+#   커밋하지 않는다. 규칙 하나로 외운다:
+#
+#     PNG 에서 픽셀 단위로 나온 것 → ignore
+#     PNG 를 재서 얻은 스칼라(각도·비율·길이) → 커밋
+#
+#   그래서 corpus/manifest.json 과 cross_calibration.g.dart 는 들어가고,
+#   지도 PNG·프리베이크 RGBA·RLE 픽셀 픽스처는 안 들어간다.
+#   자산이 없으면 `@Tags(['corpus'])` 테스트가 스스로 skip 한다(README §코퍼스).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 지도 원본 (base/composed 각 10장)
+corpus/maps/
+
+# 프리베이크 RGBA — 420px 픽셀 그대로라 원본과 동급이다
+fixtures/rgba/
+
+# 실지도 X 를 RLE 로 뜬 회귀 픽스처
+packages/pen_reveal/test/corpus/cross_expected.g.dart
+
+# 굽기 산출 미리보기·중간물
+corpus/measured/*.png
+*.order.png
+
+# ── Dart / Flutter ───────────────────────────────────────────────────────────
+.dart_tool/
+.packages
+build/
+pubspec.lock
+!example/pubspec.lock
+.flutter-plugins
+.flutter-plugins-dependencies
+doc/api/
+
+# ── 편집기 / OS ──────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+.DS_Store

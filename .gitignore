@@ -17,7 +17,10 @@ corpus/maps/
 fixtures/rgba/
 
 # 실지도 X 를 RLE 로 뜬 회귀 픽스처
-packages/pen_reveal/test/corpus/cross_expected.g.dart
+#   ⚠️ 생성 **Dart** 가 아니라 데이터 파일이다. import 하는 형태로 두면 파일이 없는 공개
+#   CI 에서 컴파일 자체가 깨져 `@Tags(['corpus'])` skip 이 소용없다 — 태그는 실행을 뺄 뿐
+#   컴파일을 빼지 못한다. 그래서 런타임에 읽는다(`test/corpus/cross_stroke_corpus_test.dart`).
+fixtures/cross_expected.json
 
 # 굽기 산출 미리보기·중간물
 corpus/measured/*.png

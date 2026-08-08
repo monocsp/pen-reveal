@@ -1,9 +1,16 @@
 tags:
-  # 정본 그림 10종(base/composed)이 있어야 도는 테스트. 자산은 디자인 원본이라
-  #   public 레포에 없다(`.gitignore` §디자인 자산) — 그래서 공개 CI 에서는 자동으로
-  #   빠지고, 자산을 갖춘 로컬에서만 돈다. 빠뜨린 게 아니라 설계다.
+  # 정본 그림 10종이 있어야 도는 테스트. 자산은 디자인 원본이라 public 레포에 없다
+  #   (`.gitignore` §디자인 자산) — 그래서 공개 CI 에서는 자동으로 빠지고, 자산을 갖춘
+  #   로컬에서만 돈다. 빠뜨린 게 아니라 설계다.
+  #
+  # ⚠️ 여기서 `skip:` 을 걸지 **않는다.** 태그에 skip 을 걸면 `dart test -t corpus` 로도
+  #   안 돌아가고(태그 선택은 skip 을 풀지 않는다) `--run-skipped` 가 필요해지는데, 그건
+  #   자산이 없을 때의 자기-skip 까지 같이 풀어 버려 없는 파일을 읽다 터진다.
+  #   대신 **테스트가 스스로 뺀다** — `test/corpus/corpus_fixtures.dart` 의 `corpusSkip` 을
+  #   `skip:` 인자로 넘기는 것이 이 패키지의 규약이다. 그러면
+  #     · 자산 없음(CI)        → 사유와 함께 skip
+  #     · 자산 있음(로컬)      → `dart test` 도 `dart test -t corpus` 도 그냥 돈다
   corpus:
-    skip: '코퍼스 자산이 없다 — corpus/maps/ 를 채운 뒤 `dart test -t corpus` 로 돌린다'
 
   # 버그를 잡은 뒤 경로를 잠근 테스트. 언제나 돈다.
   regression:

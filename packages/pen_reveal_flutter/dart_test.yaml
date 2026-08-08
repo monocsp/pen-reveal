@@ -1,0 +1,8 @@
+tags:
+  # 정본 지도 PNG 10종(`corpus/maps/`)이 있어야 도는 테스트. 코어 패키지와 같은 규약이다 —
+  #   태그에 `skip:` 을 걸지 않고 **테스트가 스스로 뺀다**(`test/corpus/corpus_maps.dart` 의
+  #   `corpusSkip` 을 `skip:` 인자로 넘긴다). 이유는 pen_reveal/dart_test.yaml 참고.
+  corpus:
+
+  # 버그를 잡은 뒤 경로를 잠근 테스트. 언제나 돈다.
+  regression:

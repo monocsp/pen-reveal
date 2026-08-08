@@ -3,7 +3,8 @@
 //   ⚠️ 여기서 쓰는 리샘플러(`FilterQuality.medium`)는 사실상 **캘리브레이션의 일부**다.
 //   `pen_reveal` 의 코퍼스 상수(최단 124.5 · 최장 905.7)는 이 리샘플러가 낸 픽셀을 잰
 //   값이다. 엔진이 커널을 바꾸면 같은 PNG 에서 다른 길이가 나온다 — 그래서
-//   `test/resampler_golden_test.dart` 가 "PNG → RGBA 가 여전히 그 바이트인가"를 따로 잠근다.
+//   `test/corpus/resampler_golden_test.dart` 가 "PNG → RGBA 가 여전히 그 바이트인가"를
+//   따로 잠근다(정본 지도가 있어야 재는 것이라 코퍼스 규약을 따른다).
 //   그 테스트가 빨개지면 알고리즘이 아니라 **엔진이** 바뀐 것이다.
 import 'dart:async';
 import 'dart:typed_data';

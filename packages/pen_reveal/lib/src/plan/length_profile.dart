@@ -16,7 +16,8 @@
 //   최장 지도와 같은 시간에 그려지고, 최단보다 짧은 길은 t=0.0 이다. 재정규화(코퍼스를
 //   런타임에 다시 잡기)는 **일부러 안 한다** — 같은 지도가 목록에 무엇이 있느냐에 따라
 //   다른 속도로 그려지면 연출이 재현되지 않는다. 코퍼스가 실제로 넓어지면
-//   [StrokeLengthProfile] 의 값을 사람이 다시 재서 고친다(`bag_reveal_corpus_test` 가 알려준다).
+//   [StrokeLengthProfile] 의 값을 사람이 다시 재서 고친다
+//   (`test/corpus/length_corpus_test.dart` 가 알려준다).
 //
 //   순수 Dart 다 — `package:flutter` 도, 시간 타입도 안 쓴다.
 import 'dart:math' as math;

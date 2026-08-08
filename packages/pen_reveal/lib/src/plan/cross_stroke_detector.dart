@@ -15,7 +15,7 @@
 //   [CrossCalibration] 상수와 회귀 픽스처다(`tool/bake_cross_calibration.py`).
 //
 //   ⚠️ 알고리즘은 그 python 스크립트와 **한 글자도 어긋나면 안 된다**. 한쪽만 고치면
-//   `test/corpus/cross_stroke_detector_test.dart` 의 실지도 픽스처가 RED 로 잡는다.
+//   `test/corpus/cross_stroke_corpus_test.dart` 의 실지도 픽스처가 RED 로 잡는다.
 //
 //   순수 Dart 다 — `package:flutter` 를 안 쓴다(isolate 로 통째로 넘길 수 있어야 한다).
 import 'dart:math' as math;

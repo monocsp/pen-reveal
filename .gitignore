@@ -38,3 +38,6 @@ doc/api/
 .vscode/
 *.iml
 .DS_Store
+
+# 세션 인계 메모 — 내부용, 공개 안 함
+NEXT.local.md

@@ -1,0 +1,7 @@
+include: package:very_good_analysis/analysis_options.yaml
+
+linter:
+  rules:
+    # 이 패키지의 주석은 한국어 산문이라 줄 길이를 문장 단위로 맞춘다.
+    lines_longer_than_80_chars: false
+    public_member_api_docs: false

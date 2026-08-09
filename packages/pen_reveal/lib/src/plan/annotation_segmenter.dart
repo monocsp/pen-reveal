@@ -28,6 +28,7 @@ class AnnotationChunk {
     required this.right,
     required this.bottom,
     required this.line,
+    this.strokes = const <Int32List>[],
   });
 
   /// 행 우선 평면 인덱스.
@@ -41,6 +42,18 @@ class AnnotationChunk {
   /// 몇 번째 줄인가(0 이 맨 위). 줄이 하나면 전부 0.
   final int line;
 
+  /// 덩어리 **안**을 다시 나눈 조각들 — 쓰는 순서대로. 비어 있으면 나누지 않은 것이다.
+  ///
+  ///   음절 힌트([AnnotationSegmenterConfig.expectedSyllableCount])를 주면 이 덩어리가
+  ///   음절 하나가 되고, 여기에 그 음절의 자모가 **위→아래, 같은 높이는 좌→우** 순으로
+  ///   들어간다. 표현 계층은 이 순서를 덩어리 **안의 진행도**로 인코딩하면 되므로
+  ///   세그먼트를 자모 수만큼 늘리지 않아도 된다(늘리면 덩어리마다 쉼이 붙어 연출이
+  ///   최소 386ms 길어진다 — 실측).
+  ///
+  ///   ⚠️ 자모가 붙어 있으면 못 가른다. 래스터에는 글자 경계도 획순도 없다 — 여기서 내는
+  ///   것은 **연결요소를 읽는 순서로 정렬한 것**이지 진짜 자모 분해가 아니다.
+  final List<Int32List> strokes;
+
   int get width => right - left + 1;
   int get height => bottom - top + 1;
 }
@@ -51,7 +64,27 @@ class AnnotationSegmenterConfig {
     this.minChunkPixels = 24,
     this.orphanAttachRatio = 0.8,
     this.lineOverlapRatio = 0.34,
+    this.expectedSyllableCount,
+    this.jamoBandOverlapRatio = 0.5,
   });
+
+  /// 줄 하나에 글자가 **몇 자**인지 아는 경우에만 준다. `null` 이면 연결요소 그대로다.
+  ///
+  ///   왜 힌트가 필요한가: 손글씨는 이웃 음절이 실제로 **붙는다**(실측: "발견한곳" 에서
+  ///   "견"과 "한"이 8-이웃으로 이어진 한 덩어리다). 연결성만으로는 절대 못 가른다.
+  ///   반대로 "곳"은 ㄱ·ㅗ·ㅅ 이 세 덩어리로 떨어져 나온다 — 붙는 쪽과 떨어지는 쪽이
+  ///   섞여 있어서 개수를 모르면 어느 쪽으로도 판단할 수 없다.
+  ///
+  ///   ⚠️ 글씨가 아닐 수도 있다는 계약은 그대로다(map_deep_05 는 육각형 얼굴 그림).
+  ///   그래서 **기본은 `null`** 이고, 아는 호출부만 준다.
+  final int? expectedSyllableCount;
+
+  /// 음절 안에서 두 조각이 "같은 높이"인가 — 세로로 겹친 길이 ÷ 둘 중 낮은 높이.
+  ///
+  ///   ⚠️ 중심 y 차이로 보면 안 된다. ㅂ 과 ㅏ 는 둘 다 세로로 길어 중심이 비슷하지만,
+  ///   ㅗ 처럼 납작한 자모는 중심이 크게 달라진다. 겹침 비율로 봐야 "ㅂ·ㅏ 는 같은 줄,
+  ///   ㄹ 은 아랫줄" 이 제대로 나온다.
+  final double jamoBandOverlapRatio;
 
   /// 이보다 작은 연결요소는 **바로 버리는 게 아니라** 붙일 곳을 찾는다.
   ///
@@ -102,6 +135,11 @@ List<AnnotationChunk> segmentAnnotation({
   final out = <AnnotationChunk>[];
   for (var line = 0; line < lines.length; line++) {
     final row = lines[line]..sort((a, b) => a.left.compareTo(b.left));
+    final syllables = config.expectedSyllableCount;
+    if (syllables != null && syllables > 1 && row.length > 1) {
+      out.addAll(_asSyllables(row, line, syllables, width, height, config));
+      continue;
+    }
     for (final component in row) {
       out.add(
         AnnotationChunk(
@@ -114,6 +152,161 @@ List<AnnotationChunk> segmentAnnotation({
         ),
       );
     }
+  }
+  return out;
+}
+
+/// 줄 하나를 음절 [count] 개로 가르고, 음절 안을 쓰는 순서로 정렬한다.
+///
+///   경계는 **균등 분할을 출발점으로 잡고 잉크가 가장 얇은 열로 스냅**한다. 균등만 쓰면
+///   획 한복판을 자르고, 골짜기만 찾으면 음절 안의 세로 자모 사이(ㅂ 과 ㅏ)가 더 깊어
+///   엉뚱한 데를 자른다. 둘을 합쳐야 실제 글자 사이로 간다.
+List<AnnotationChunk> _asSyllables(
+  List<_Component> row,
+  int line,
+  int count,
+  int width,
+  int height,
+  AnnotationSegmenterConfig config,
+) {
+  var left = 1 << 30;
+  var right = -1;
+  for (final c in row) {
+    if (c.left < left) left = c.left;
+    if (c.right > right) right = c.right;
+  }
+  final span = right - left + 1;
+  if (span < count) return _plainChunks(row, line);
+
+  // 열별 잉크 양 — 경계를 얇은 데로 밀 때 쓴다.
+  final ink = Int32List(span);
+  for (final c in row) {
+    for (final index in c.pixels) {
+      final x = index % width - left;
+      if (x >= 0 && x < span) ink[x]++;
+    }
+  }
+
+  final cell = span / count;
+  final cuts = <int>[];
+  final slack = math.max(1, (cell * 0.25).round());
+  for (var i = 1; i < count; i++) {
+    final want = (cell * i).round();
+    var best = want;
+    var bestInk = 1 << 30;
+    for (var x = want - slack; x <= want + slack; x++) {
+      if (x <= 0 || x >= span) continue;
+      if (ink[x] < bestInk) {
+        bestInk = ink[x];
+        best = x;
+      }
+    }
+    cuts.add(best + left);
+  }
+
+  // ⚠️ **픽셀 단위로 자른다.** 연결요소를 칸에 배정하는 방식으로는 "견"과 "한"처럼
+  //   실제로 이어진 덩어리를 절대 못 가른다(실측: 51px 짜리 한 덩어리로 남았다).
+  //   경계가 잉크가 얇은 열로 스냅돼 있으므로 획을 가로지르는 손해는 최소다.
+  final cellPixels = List<List<int>>.generate(count, (_) => <int>[]);
+  for (final c in row) {
+    for (final index in c.pixels) {
+      final x = index % width;
+      var slot = 0;
+      while (slot < cuts.length && x >= cuts[slot]) {
+        slot++;
+      }
+      cellPixels[slot].add(index);
+    }
+  }
+
+  final out = <AnnotationChunk>[];
+  for (final cellIndices in cellPixels) {
+    if (cellIndices.isEmpty) continue;
+    // 칸 안에서 다시 연결요소를 잡으면 그게 곧 자모 후보다.
+    final group = _connectedComponents(
+      Int32List.fromList(cellIndices),
+      width,
+      height,
+    );
+    if (group.isEmpty) continue;
+    final ordered = _orderJamo(group, config);
+    var l = 1 << 30;
+    var t = 1 << 30;
+    var r = -1;
+    var b = -1;
+    var total = 0;
+    for (final c in ordered) {
+      if (c.left < l) l = c.left;
+      if (c.top < t) t = c.top;
+      if (c.right > r) r = c.right;
+      if (c.bottom > b) b = c.bottom;
+      total += c.pixels.length;
+    }
+    // 픽셀은 **쓰는 순서대로** 이어 붙인다 — 표현 계층이 같은 순서의 진행도를 만든다.
+    final flat = Int32List(total);
+    final strokes = <Int32List>[];
+    var at = 0;
+    for (final c in ordered) {
+      final one = c.toInt32List();
+      strokes.add(one);
+      for (final index in one) {
+        flat[at++] = index;
+      }
+    }
+    out.add(
+      AnnotationChunk(
+        pixels: flat,
+        left: l,
+        top: t,
+        right: r,
+        bottom: b,
+        line: line,
+        strokes: strokes,
+      ),
+    );
+  }
+  return out.isEmpty ? _plainChunks(row, line) : out;
+}
+
+List<AnnotationChunk> _plainChunks(List<_Component> row, int line) => [
+      for (final c in row)
+        AnnotationChunk(
+          pixels: c.toInt32List(),
+          left: c.left,
+          top: c.top,
+          right: c.right,
+          bottom: c.bottom,
+          line: line,
+        ),
+    ];
+
+/// 음절 안의 조각들을 **위→아래, 같은 높이는 좌→우** 로.
+///
+///   "같은 높이"는 세로 겹침 비율로 본다 — ㅂ 과 ㅏ 는 크게 겹쳐 한 띠, 받침 ㄹ 은
+///   겹침이 작아 다음 띠로 내려간다.
+List<_Component> _orderJamo(
+  List<_Component> group,
+  AnnotationSegmenterConfig config,
+) {
+  final rest = [...group]..sort((a, b) => a.top.compareTo(b.top));
+  final out = <_Component>[];
+  while (rest.isNotEmpty) {
+    final head = rest.removeAt(0);
+    final band = <_Component>[head];
+    rest.removeWhere((c) {
+      final overlap =
+          math.min(head.bottom, c.bottom) - math.max(head.top, c.top) + 1;
+      final shorter = math.min(
+        head.bottom - head.top + 1,
+        c.bottom - c.top + 1,
+      );
+      final same =
+          shorter > 0 && overlap / shorter >= config.jamoBandOverlapRatio;
+      if (same) band.add(c);
+      return same;
+    });
+    band.sort((a, b) => a.left.compareTo(b.left));
+    out.addAll(band);
   }
   return out;
 }

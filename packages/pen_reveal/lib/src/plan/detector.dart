@@ -37,6 +37,7 @@ class RevealDetectConfig {
     this.xMinRoadDistanceDominance = 1.6,
     this.xMinAreaRatio = 0.0050,
     this.xMaxAreaRatio = 0.0105,
+    this.strayInkMaxPixels = 12,
     this.annotation = const AnnotationSegmenterConfig(),
   });
 
@@ -68,6 +69,18 @@ class RevealDetectConfig {
   /// X 덩어리가 캔버스에서 차지하는 면적비의 실측 범위(관측 0.00692~0.00774).
   final double xMinAreaRatio;
   final double xMaxAreaRatio;
+
+  /// 붉은 잉크에 **닿아 있는** 길 덩어리가 이보다 작으면 길이 아니라 그 잉크의 테두리로 본다.
+  ///
+  ///   ⚠️ 이게 없으면 화면에 붉은 점이 뜬다. 빨간 글씨의 안티에일리어싱 테두리는 바닥과
+  ///   충분히 다르면서(diff > [differenceThreshold]) 아직 붉지는 않아(R−G ≤
+  ///   [accentRedDeltaThreshold]) **길로 분류된다.** 뼈대에서 끊긴 섬이라 굽기가 길 단계의
+  ///   **맨 끝** 시각을 주고, 그래서 글씨 차례가 오기도 전에 글씨 윤곽을 따라 점이 켜진다 —
+  ///   정본 map_basic_01(420)에서 덩어리 101개·122px 이 그렇게 떴다.
+  ///
+  ///   크기 상한이 진짜 길을 지킨다. 길은 X 와 실제로 맞닿지만 한 덩어리(2,383px)라
+  ///   이 관문에 걸리지 않는다. 0 으로 두면 규칙이 꺼진다.
+  final int strayInkMaxPixels;
 
   final AnnotationSegmenterConfig annotation;
 }
@@ -131,10 +144,13 @@ RevealPlan detectReveal(RevealDetectInput input) {
     }
   }
 
+  _absorbStrayInk(road, accent, w, h, cfg.strayInkMaxPixels);
+
   final segmentId = Uint8List(w * h)..fillRange(0, w * h, kRevealHiddenSegment);
   final within = Uint16List(w * h);
   final segments = <RevealSegment>[];
 
+  accent.sort();
   final baked = bakeOneStrokeOrder(StrokeMask(road, w, h));
   _addRoad(baked, w, math.max(w, h), segmentId, within, segments);
   final leftovers = _addXStrokes(
@@ -156,6 +172,70 @@ RevealPlan detectReveal(RevealDetectInput input) {
     within: within,
     segments: segments,
   );
+}
+
+/// 붉은 잉크에 닿은 **작은** 길 덩어리를 그 잉크 쪽으로 넘긴다.
+///
+///   빨간 글씨의 안티에일리어싱 테두리가 R−G 관문을 못 넘겨 길로 분류되는 것을 되돌린다.
+///   자세한 근거는 [RevealDetectConfig.strayInkMaxPixels] 에 적었다.
+///
+///   ⚠️ **덩어리 단위로 판정한다.** 픽셀 단위로 "붉은 것에 닿았으면 넘긴다"로 하면 길이 X 와
+///   실제로 맞닿는 자리에서 길 끝이 조금씩 깎여 나간다. 덩어리로 보면 진짜 길은 한 덩어리라
+///   크기 상한에 걸려 통째로 남는다.
+///
+///   [road] 를 제자리에서 지우고 [accent] 에 밀어 넣는다.
+void _absorbStrayInk(
+  Uint8List road,
+  List<int> accent,
+  int w,
+  int h,
+  int maxPixels,
+) {
+  if (maxPixels <= 0 || accent.isEmpty) return;
+
+  final isAccent = Uint8List(w * h);
+  for (final i in accent) {
+    isAccent[i] = 1;
+  }
+
+  final seen = Uint8List(w * h);
+  final stack = <int>[];
+  final blob = <int>[];
+  for (var start = 0; start < road.length; start++) {
+    if (road[start] == 0 || seen[start] == 1) continue;
+    stack
+      ..clear()
+      ..add(start);
+    blob.clear();
+    seen[start] = 1;
+    var touches = false;
+    // 상한을 넘는 순간 멈추지 **않는다** — 덩어리를 끝까지 훑어야 다음 덩어리로 샐 일이 없다.
+    while (stack.isNotEmpty) {
+      final p = stack.removeLast();
+      blob.add(p);
+      final x = p % w;
+      final y = p ~/ w;
+      for (var dy = -1; dy <= 1; dy++) {
+        for (var dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = x + dx;
+          final ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          final j = ny * w + nx;
+          if (isAccent[j] == 1) touches = true;
+          if (road[j] != 0 && seen[j] == 0) {
+            seen[j] = 1;
+            stack.add(j);
+          }
+        }
+      }
+    }
+    if (!touches || blob.length > maxPixels) continue;
+    for (final p in blob) {
+      road[p] = 0;
+      accent.add(p);
+    }
+  }
 }
 
 /// 길 — 세선화 한 붓 순서를 그대로 세그먼트 하나의 진행도로 옮긴다.

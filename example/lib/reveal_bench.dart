@@ -75,6 +75,10 @@ class _RevealBenchState extends State<RevealBench>
   Object? _error;
   var _speed = 1.0;
 
+  /// 자산을 읽고 PNG 를 디코딩하는 데 든 시간 — `prepare()` **밖**이다.
+  ///   "지도를 주면 몇 ms 뒤에 시작하나" 는 이것과 `profile.total` 을 더해야 나온다.
+  Duration? _sourceTime;
+
   /// 늦게 끝난 굽기가 최신 결과를 덮지 못하게 하는 토큰.
   var _generation = 0;
 
@@ -115,7 +119,9 @@ class _RevealBenchState extends State<RevealBench>
     final generation = ++_generation;
     setState(() => _error = null);
     try {
+      final clock = Stopwatch()..start();
       final pair = await widget.source();
+      final sourceTime = Duration(microseconds: clock.elapsedMicroseconds);
       final prepared = await RevealPreparer(
         timing: widget.timing,
         detectConfig: widget.detectConfig,
@@ -136,6 +142,7 @@ class _RevealBenchState extends State<RevealBench>
         _prepared = prepared;
         _base = pair.base;
         _composed = pair.composed;
+        _sourceTime = sourceTime;
       });
       oldPrepared?.dispose();
       oldBase?.dispose();
@@ -241,7 +248,20 @@ class _RevealBenchState extends State<RevealBench>
               ],
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
+          // "지도를 주면 몇 ms 뒤에 시작하나" 를 화면에서 바로 읽게 한다.
+          //   ⚠️ 자산 로드·디코딩은 `prepare()` **밖**이라 따로 재서 더한다.
+          Text(
+            _sourceTime == null
+                ? ''
+                : '준비 ${_msOf(_sourceTime! + prepared.profile.total)} '
+                    '= 로드·디코딩 ${_msOf(_sourceTime!)} + ${prepared.profile}',
+            style: const TextStyle(
+              fontSize: 11,
+              fontFeatures: [FontFeature.tabularFigures()],
+            ),
+          ),
+          const SizedBox(height: 10),
           _StageBar(
             stages: prepared.stages,
             progress: _controller.value,
@@ -507,3 +527,5 @@ class _Panel extends StatelessWidget {
         child: SafeArea(child: child),
       );
 }
+
+String _msOf(Duration d) => '${(d.inMicroseconds / 1000).toStringAsFixed(1)}ms';

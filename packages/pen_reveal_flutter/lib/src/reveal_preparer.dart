@@ -33,6 +33,7 @@ class PreparedReveal {
     required this.revealDuration,
     required this.sharpness,
     required this.stages,
+    required this.profile,
   });
 
   /// 픽셀값 = 드러나는 시점(0~[RevealSharpness.maxOrderValue]).
@@ -59,6 +60,9 @@ class PreparedReveal {
   ///   픽셀당 시각뿐이라, "저 회색값이 길의 끝인지 X 의 시작인지"를 밖에서 알 방법이 없다.
   ///   일정은 굽는 순간에만 존재하므로 그때 접어 두지 않으면 사라진다.
   final RevealStageMarks stages;
+
+  /// 이 굽기가 어디에 시간을 썼나. 화면에 띄우거나 로그로 남겨 회귀를 잡는 데 쓴다.
+  final RevealPrepareProfile profile;
 
   void dispose() => reveal.dispose();
 }
@@ -93,10 +97,13 @@ class RevealPreparer {
     required ui.Image base,
     required ui.Image composed,
   }) async {
+    final clock = Stopwatch()..start();
+
     // 굽기 해상도로 줄여 뜬다 — 원본 크기로 돌리면 몇 배 든다.
     final size = fitImageLongSide(composed, longSide);
     final composedRgba = await rgbaAt(composed, size.width, size.height);
     final baseRgba = await rgbaAt(base, size.width, size.height);
+    final resampled = clock.elapsedMicroseconds;
 
     final detected = await compute(
       detectReveal,
@@ -108,6 +115,8 @@ class RevealPreparer {
         config: detectConfig,
       ),
     );
+    final detectedAt = clock.elapsedMicroseconds;
+
     // 자를 기준 해상도로 환산한다 — 안 하면 품질만 올렸는데 연출이 느려진다.
     //   기본값이면 곱셈 자체를 건너뛴다(부동소수 오차 없이 그대로).
     final plan = longSide == kBakeLongSide
@@ -115,16 +124,75 @@ class RevealPreparer {
         : detected.scaleMeasures(kBakeLongSide / longSide);
     final schedule = timing.schedule(plan);
     final order = compiler.compile(plan, schedule);
+    final compiledAt = clock.elapsedMicroseconds;
+
+    final texture = await textureFromRgba(
+      revealOrderToRgba(order),
+      plan.width,
+      plan.height,
+    );
+    clock.stop();
+
     return PreparedReveal(
-      reveal: await textureFromRgba(
-        revealOrderToRgba(order),
-        plan.width,
-        plan.height,
-      ),
+      reveal: texture,
       revealDuration: schedule.total,
       // ⚠️ 상수를 다시 적지 않는다 — **구운 그 값**을 그대로 실어 보낸다.
       sharpness: compiler.sharpness,
       stages: RevealStageMarks.of(plan, schedule),
+      profile: RevealPrepareProfile(
+        resample: Duration(microseconds: resampled),
+        detect: Duration(microseconds: detectedAt - resampled),
+        compile: Duration(microseconds: compiledAt - detectedAt),
+        upload: Duration(microseconds: clock.elapsedMicroseconds - compiledAt),
+      ),
     );
   }
+}
+
+/// 한 번의 굽기가 어디에 시간을 썼나 — **재 본 값**이지 추정이 아니다.
+///
+///   ⚠️ 이 넷을 더한 것이 `prepare()` 의 전부이고, **그림을 디코딩하는 시간은 안 들어 있다.**
+///   `prepare()` 는 이미 디코딩된 `ui.Image` 두 장을 받는다. "지도를 주면 몇 ms 뒤에
+///   시작하나" 를 답하려면 자산 로드와 PNG 디코딩을 호출부에서 따로 재서 더해야 한다.
+///   전에 벤치가 이 경계를 흐려서 구간 합이 총합을 넘는 표를 냈다 — 같은 실수를 막으려고
+///   경계를 값으로 박아 둔다.
+class RevealPrepareProfile {
+  const RevealPrepareProfile({
+    required this.resample,
+    required this.detect,
+    required this.compile,
+    required this.upload,
+  });
+
+  /// 안 재고 만든 결과 — 손으로 텍스처를 만들어 그려 볼 때(페인터 시험 등) 쓴다.
+  ///
+  ///   ⚠️ 기본값으로 두지 **않는다.** 기본값이면 "안 잰 것"과 "0 이 나온 것"이 구분되지
+  ///   않고, 굽기 경로가 프로파일을 안 채워도 아무도 모른다. 이름으로 밝히게 한다.
+  static const RevealPrepareProfile unmeasured = RevealPrepareProfile(
+    resample: Duration.zero,
+    detect: Duration.zero,
+    compile: Duration.zero,
+    upload: Duration.zero,
+  );
+
+  /// 두 장을 굽기 해상도로 줄여 RGBA 로 뜨는 데 든 시간(GPU 왕복 2회).
+  final Duration resample;
+
+  /// `detectReveal` — 분류·세선화·한 붓 순회·붓 자국 칠하기·평활. **다른 isolate 에서** 돈다.
+  final Duration detect;
+
+  /// 일정 계산과 8비트 텍스처 컴파일. 본 스레드다.
+  final Duration compile;
+
+  /// 텍스처를 `ui.Image` 로 올리는 데 든 시간.
+  final Duration upload;
+
+  Duration get total => resample + detect + compile + upload;
+
+  @override
+  String toString() => '리샘플 ${_ms(resample)} · 탐지 ${_ms(detect)} · '
+      '컴파일 ${_ms(compile)} · 업로드 ${_ms(upload)} = ${_ms(total)}';
+
+  static String _ms(Duration d) =>
+      '${(d.inMicroseconds / 1000).toStringAsFixed(1)}ms';
 }

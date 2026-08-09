@@ -171,16 +171,32 @@ CrossStrokeSplit? splitCrossStrokes({
     slash = firstIsSmaller ? second : first;
   }
 
+  // ⚠️ **교차부는 통째로 `\` 가 갖는다.** 예전엔 두 축까지의 거리를 비교해 가까운 쪽에
+  //   줬는데(`toBackslash <= toSlash`), 그러면 중심이 두 축의 이등분선으로 **사분면**으로
+  //   갈려 `\` 의 폭이 교차부에서 절반이 된다 — `\` 만 그어진 순간 가운데가 잘록해 두
+  //   조각처럼 보인다. 진짜 X 는 두 획이 겹치는 자리가 그냥 겹칠 뿐이다.
+  //
+  //   픽셀당 시각이 하나뿐인 8비트 텍스처라 "둘 다"는 표현할 수 없다. 그래서 **먼저 긋는
+  //   획**에 준다 — `\` 가 지날 때 온전한 폭으로 지나가고, 뒤따르는 `/` 는 이미 드러난
+  //   그 자리를 지나므로 눈에는 겹쳐 보인다.
   final onBackslash = Uint8List(n);
   var backslashCount = 0;
   for (var i = 0; i < n; i++) {
     final toBackslash = _normalDistance(backslash, xs[i], ys[i]);
     final toSlash = _normalDistance(slash, xs[i], ys[i]);
-    if (toBackslash <= toSlash) {
+    // `\` **자기 획 안**이면 통째로 `\` 가 갖는다. 그 밖은 가까운 축으로(버리지 않는다).
+    //
+    //   ⚠️ `halfWidth` 라는 이름과 달리 거기 든 값은 스윕 창의 **전체 폭**이다(`_sweep` 이
+    //   `halfWidth: band` 로 넣는다). `_normalDistance` 가 그 값으로 나누므로 실제 반폭은
+    //   `0.5` 다. `≤ 1` 로 잡으면 축에서 ±획 굵기 전체를 뜻해, 두 띠의 교집합이 진짜 교차
+    //   마름모의 두 배가 되어 `/` 팔의 뿌리까지 삼킨다(실측: 허리비 1.70~2.25 로 오히려
+    //   부푼다. 이등분선 방식은 0.20~0.32 로 잘록했고, 기하학적 이상값은 1.00~1.15 다).
+    if (toBackslash <= _ownBandHalf || toBackslash <= toSlash) {
       onBackslash[i] = 1;
       backslashCount++;
     }
   }
+  // `\` 가 전부를 삼켰으면 두 획으로 갈린 게 아니다 — 기존대로 X 판정을 포기한다.
   if (backslashCount == 0 || backslashCount == n) return null;
 
   final within = Float32List(n);
@@ -204,6 +220,10 @@ CrossStrokeSplit? splitCrossStrokes({
     slashLength: slashLength,
   );
 }
+
+/// `_normalDistance` 기준의 **자기 획 반폭**. `halfWidth` 필드가 전체 폭을 담고 있어서
+///   실제 반폭은 그 절반이다 — 이름을 고치면 python 굽기 도구와 필드명이 갈린다.
+const double _ownBandHalf = 0.5;
 
 /// 각도마다 "가장 뭉치는 띠"를 찾아 점수 높은 순으로.
 ///

@@ -44,18 +44,47 @@ class OneStrokeResult {
 ///     · [_spread] 를 형태정리본이 아니라 **원본 마스크**로 퍼뜨린다(열림 연산에 깎인
 ///       가장자리·가는 조각이 영영 안 드러나던 것을 되찾는다)
 ///     · 그래도 뼈대와 안 이어진 섬은 **맨 끝(254)** 에 함께 드러낸다
+///   ⚠️ **커널은 캔버스가 아니라 잉크 상자(ROI)에서만 돈다.** 길은 캔버스의 1.5~6.9%
+///   밖에 안 되는데 형태 정리·세선화는 `w*h` 를 통째로 여러 번 훑는다. 잉크 bbox 에
+///   [_roiPad] 만큼 여백을 두고 잘라 돌리면 결과가 **바이트 단위로 같으면서** 두 배 빠르다
+///   (실측 420: 16.3 → 8.4 ms). 여백은 닫힘 2회가 바깥으로 밀 수 있는 최대치보다 넉넉하다.
 OneStrokeResult bakeOneStrokeOrder(StrokeMask input) {
-  final w = input.width;
-  final h = input.height;
-  final mask = Uint8List(w * h);
+  final fullW = input.width;
+  final fullH = input.height;
+
+  // 이진화하면서 잉크 상자를 같이 잡는다 — 어차피 한 번 훑는다.
+  var minX = fullW;
+  var minY = fullH;
+  var maxX = -1;
+  var maxY = -1;
   var maskCount = 0;
-  for (var i = 0; i < mask.length; i++) {
-    if (input.alpha[i] > 128) {
-      mask[i] = 1;
+  for (var y = 0; y < fullH; y++) {
+    for (var x = 0; x < fullW; x++) {
+      if (input.alpha[y * fullW + x] <= 128) continue;
       maskCount++;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
     }
   }
-  if (maskCount == 0) return _blank(w, h);
+  if (maskCount == 0) return _blank(fullW, fullH);
+
+  final left = minX - _roiPad < 0 ? 0 : minX - _roiPad;
+  final top = minY - _roiPad < 0 ? 0 : minY - _roiPad;
+  final right = maxX + _roiPad >= fullW ? fullW - 1 : maxX + _roiPad;
+  final bottom = maxY + _roiPad >= fullH ? fullH - 1 : maxY + _roiPad;
+  final w = right - left + 1;
+  final h = bottom - top + 1;
+
+  final mask = Uint8List(w * h);
+  for (var y = 0; y < h; y++) {
+    final src = (top + y) * fullW + left;
+    final dst = y * w;
+    for (var x = 0; x < w; x++) {
+      if (input.alpha[src + x] > 128) mask[dst + x] = 1;
+    }
+  }
 
   // 가장자리 톱니를 죽인다 — 안 하면 세선화가 잔가시를 만든다.
   var m = mask;
@@ -68,29 +97,69 @@ OneStrokeResult bakeOneStrokeOrder(StrokeMask input) {
 
   final skel = _zhangSuen(Uint8List.fromList(m), w, h);
   final order = _oneStrokeOrder(skel, m, w, h);
+
+  final out = Uint8List(fullW * fullH)..fillRange(0, fullW * fullH, 255);
   if (order == null || order.isEmpty) {
     // 형태정리에 뼈대가 통째로 지워졌다(아주 가는 그림). 순서를 못 매길 뿐이지
     //   안 그릴 이유는 없다 — 한 번에 드러낸다.
-    return OneStrokeResult(_atOnce(mask), 0);
+    _blit(out, fullW, left, top, _atOnce(mask), w, h);
+    return OneStrokeResult(out, 0);
   }
 
-  final field = _spread(order, mask, w, h);
   var maxT = 0.0;
-  for (final v in field) {
+  for (final v in order.values) {
     if (v > maxT) maxT = v;
   }
-  final out = Uint8List(w * h);
-  for (var i = 0; i < out.length; i++) {
+  final field = _spread(order, mask, w, h);
+  final roi = Uint8List(w * h);
+  for (var i = 0; i < roi.length; i++) {
     if (mask[i] == 0) {
-      out[i] = 255;
+      roi[i] = 255;
       continue;
     }
     // 뼈대에서 못 닿은 섬 — 버리지 않고 맨 끝에 붙인다.
-    out[i] = field[i] < 0
+    roi[i] = field[i] < 0
         ? 254
         : (field[i] / (maxT <= 0 ? 1 : maxT) * 254).round().clamp(0, 254);
   }
+  _blit(out, fullW, left, top, roi, w, h);
   return OneStrokeResult(out, maxT);
+}
+
+/// 잉크 상자 둘레 여백.
+///
+///   **실측 하한은 1 이다.** 594,368 케이스(4×4 전수 + 랜덤 + 퍼지 + 정본 30)에서
+///   pad 1~8 은 캔버스 전체와 **바이트 동일**이고, **pad 0 은 13.3~13.7% 가 깨진다.**
+///
+///   왜 1 인가: `_dilate` 는 패스당 1px 밖으로 밀지만, 뒤따르는 `_erode` 는 3×3 이 전부 1 인
+///   픽셀만 남기므로 살아남는 것은 원래 bbox 안이다. 단계별 실측도 같다 —
+///   `dilate1`·`dilate2` 만 정확히 1px 나갔다가 침식에 되돌아오고, 열림·세선화는 0px.
+///   즉 **ROI ⊇ bbox+1 이면 캔버스 전체와 항등**이다. 4 는 3px 여유다.
+///
+///   ⚠️ **정본 코퍼스만으로는 이걸 못 잡는다.** 정본 10종의 bbox 는 캔버스 경계에 하나도
+///   안 닿아(가장 가까운 것도 210 에서 좌 23px) pad 0 에서도 30/30 통과한다. 그래서
+///   `roi_pad_test.dart` 가 **경계에 닿는 최소 반례**를 따로 잠근다. 여백을 줄이려면
+///   그 시험부터 볼 것.
+const int _roiPad = 4;
+
+/// ROI 결과를 원래 크기 배열에 되붙인다.
+void _blit(
+  Uint8List dst,
+  int dstWidth,
+  int left,
+  int top,
+  Uint8List src,
+  int w,
+  int h,
+) {
+  for (var y = 0; y < h; y++) {
+    dst.setRange(
+      (top + y) * dstWidth + left,
+      (top + y) * dstWidth + left + w,
+      src,
+      y * w,
+    );
+  }
 }
 
 OneStrokeResult _blank(int w, int h) =>
@@ -363,16 +432,93 @@ void _pruneSpurs(Map<int, List<int>> adj, int minLen) {
   }
 }
 
-/// 뼈대의 시각을 길 픽셀 전체로 — 가장 가까운 뼈대의 값을 받는다.
+/// 뼈대의 시각을 길 픽셀 전체로 — **가장 가까운** 뼈대의 값을 받는다.
+///
+///   ⚠️ 예전엔 8-이웃 FIFO BFS 로 "먼저 닿은 이웃의 값"을 복사했다. 그건 대각 이동도 1홉으로
+///   세는 **체비쇼프 거리**라, 소유권 경계가 축·45° 계단으로 갈리며 이미 드러난 길 안쪽에
+///   규칙적인 **대각 빗살**이 남았다(실측: 이웃 간 순서값 차이 최대 60, 선단 폭 10.6 코드를
+///   넘는 픽셀 44개 / 길 2,505 px). 뼈대 순회는 대각을 1.4142 로 세는데 전파만 1.0 으로
+///   세던 불일치이기도 했다 — 한 파이프라인 안에 거리 정의가 둘이었다.
+///
+///   **손으로 짠 이진 힙 다익스트라**를 쓴다. 의존성이 0 이라 `package:collection` 의
+///   우선순위 큐를 못 가져오기 때문이다.
+///
+///   ⚠️ **체임퍼 2-패스로 하지 마라.** 힙을 피하려고 그렇게 짰다가 되돌렸다 —
+///   `dist` 가 `Float32List` 인데 `dist[j] + cost` 는 float64 로 계산돼 되쓸 때마다
+///   1 ULP 씩 깎인다. 그래서 `changed` 가 **영원히 참**이다(실측: 300 패스에서도 참).
+///   패스 상한은 보험이 아니라 항상 걸리는 조기 중단이 되고, 못 닿은 픽셀이 254(맨 끝)로
+///   떨어져 **고치려던 증상을 새로 만든다.** 게다가 마스크가 캔버스의 2% 인데 매 패스
+///   `w*h` 를 통째로 훑어 힙보다 두 배 느리다.
+///
+///   힙 키를 `dist` 와 **같은 float32 정밀도**로 두는 것이 중요하다 — 다르면 pop 순서와
+///   비교가 어긋나 같은 문제가 되돌아온다.
 Float32List _spread(Map<int, double> t, Uint8List mask, int w, int h) {
+  const diag = 1.4142135623730951;
   final out = Float32List(w * h)..fillRange(0, w * h, -1);
-  final q = <int>[];
+  final dist = Float32List(w * h)..fillRange(0, w * h, double.infinity);
+
+  // 이진 최소 힙 — (거리, 인덱스) 쌍을 평면 배열 둘에 담는다.
+  var cap = 1024;
+  var heapDist = Float32List(cap);
+  var heapAt = Int32List(cap);
+  var size = 0;
+
+  void push(double d, int i) {
+    if (size == cap) {
+      cap *= 2;
+      heapDist = Float32List(cap)..setRange(0, size, heapDist);
+      heapAt = Int32List(cap)..setRange(0, size, heapAt);
+    }
+    var c = size++;
+    heapDist[c] = d;
+    heapAt[c] = i;
+    while (c > 0) {
+      final p = (c - 1) >> 1;
+      if (heapDist[p] <= heapDist[c]) break;
+      final td = heapDist[p];
+      final ti = heapAt[p];
+      heapDist[p] = heapDist[c];
+      heapAt[p] = heapAt[c];
+      heapDist[c] = td;
+      heapAt[c] = ti;
+      c = p;
+    }
+  }
+
+  int pop() {
+    final top = heapAt[0];
+    size--;
+    heapDist[0] = heapDist[size];
+    heapAt[0] = heapAt[size];
+    var p = 0;
+    while (true) {
+      final l = p * 2 + 1;
+      if (l >= size) break;
+      final r = l + 1;
+      final m = (r < size && heapDist[r] < heapDist[l]) ? r : l;
+      if (heapDist[p] <= heapDist[m]) break;
+      final td = heapDist[p];
+      final ti = heapAt[p];
+      heapDist[p] = heapDist[m];
+      heapAt[p] = heapAt[m];
+      heapDist[m] = td;
+      heapAt[m] = ti;
+      p = m;
+    }
+    return top;
+  }
+
   t.forEach((i, v) {
     out[i] = v;
-    q.add(i);
+    dist[i] = 0;
+    push(0, i);
   });
-  for (var head = 0; head < q.length; head++) {
-    final i = q[head];
+
+  while (size > 0) {
+    final head = heapDist[0];
+    final i = pop();
+    // 낡은 항목 — 더 짧은 길로 이미 확정됐다.
+    if (head > dist[i]) continue;
     final y = i ~/ w;
     final x = i % w;
     for (var k = 0; k < 8; k++) {
@@ -380,9 +526,13 @@ Float32List _spread(Map<int, double> t, Uint8List mask, int w, int h) {
       final nx = x + _dx[k];
       if (ny < 0 || ny >= h || nx < 0 || nx >= w) continue;
       final j = ny * w + nx;
-      if (mask[j] == 1 && out[j] < 0) {
+      if (mask[j] != 1) continue;
+      final step = (_dy[k] != 0 && _dx[k] != 0) ? diag : 1.0;
+      final cand = dist[i] + step;
+      if (cand < dist[j]) {
+        dist[j] = cand;
         out[j] = out[i];
-        q.add(j);
+        push(dist[j], j);
       }
     }
   }

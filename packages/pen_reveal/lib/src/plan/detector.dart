@@ -391,12 +391,58 @@ void _addAnnotation(
       kind: RevealSegmentKind.annotation,
       w: w,
       // 덩어리 안은 **왼→오** — 손으로 쓰는 방향이다. 별도 wipe 렌더가 필요 없다.
-      progress: null,
+      //   단 음절로 갈린 덩어리라면 자모 순서가 있으므로 그걸 쓴다.
+      progress: _jamoProgress(chunks[i], w),
       segmentId: segmentId,
       within: within,
       segments: segments,
     );
   }
+}
+
+/// 자모 순서를 덩어리 **안의 진행도**로 편다 — 조각 하나가 한 구간을 차지하고,
+///   그 구간 안에서는 왼→오로 쓸린다.
+///
+///   세그먼트를 자모 수만큼 늘리지 않는 이유: 타이밍 정책이 덩어리마다 쉼(30ms)과 최소
+///   시간(70ms)을 붙여서, 6덩어리를 12개로 늘리면 글씨 구간이 최소 386ms 길어진다.
+///   순서만 필요한 것이므로 진행도에 담으면 리듬을 안 건드리고 끝난다.
+///
+///   [AnnotationChunk.strokes] 가 비었으면 `null` — 호출부가 기존 왼→오로 간다.
+Float32List? _jamoProgress(AnnotationChunk chunk, int w) {
+  final strokes = chunk.strokes;
+  if (strokes.isEmpty) return null;
+  final out = Float32List(chunk.pixels.length);
+  var at = 0;
+  for (var rank = 0; rank < strokes.length; rank++) {
+    final one = strokes[rank];
+    // 조각 **안**도 위→아래, 같은 줄은 좌→우 로 쓴다.
+    //
+    //   ⚠️ 여기서 x 만 보면 안 된다. 자모가 붙어 한 조각으로 남은 음절("발" 의 ㅂㅏㄹ 은
+    //   래스터에서 한 덩어리다)이 통째로 **좌→오 wipe** 가 되어 버린다(실측: 첫 음절의
+    //   corr(within, x) 가 1.00 이었다). 행 우선으로 매기면 자모를 못 갈라도 규칙이
+    //   무너지지 않는다.
+    var left = 1 << 30;
+    var right = -1;
+    var top = 1 << 30;
+    var bottom = -1;
+    for (final index in one) {
+      final x = index % w;
+      final y = index ~/ w;
+      if (x < left) left = x;
+      if (x > right) right = x;
+      if (y < top) top = y;
+      if (y > bottom) bottom = y;
+    }
+    final cols = right - left + 1;
+    final cells = (bottom - top + 1) * cols;
+    for (final index in one) {
+      final row = index ~/ w - top;
+      final col = index % w - left;
+      final local = cells <= 1 ? 1.0 : (row * cols + col) / (cells - 1);
+      out[at++] = (rank + local) / strokes.length;
+    }
+  }
+  return out;
 }
 
 /// 세그먼트 하나를 평면 배열에 찍고 목록에 더한다.

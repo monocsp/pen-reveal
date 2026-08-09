@@ -218,4 +218,48 @@ class HandwritingRevealTiming implements RevealTimingPolicy {
             annotationMaxDuration.inMilliseconds,
           )
           .round();
+
+  /// ⚠️ **값 동등성이 있어야 한다.** 이 타입은 "주입 가능한 불변 정책 객체"인데, 동등성이
+  ///   없으면 같은 리듬을 담은 두 인스턴스가 서로 다른 것으로 잡힌다. 그러면 호출부가
+  ///   `timing` 이 바뀌었는지 볼 때마다 거짓 양성이 나고, 위젯 key 에 `hashCode` 를 쓰면
+  ///   identity 해시라 **build 마다 State 가 통째로 파괴·재생성**된다(계측대 실측:
+  ///   슬라이더 한 번 끌면 최대 28회 재굽기·재생 중단).
+  ///
+  ///   `@immutable` 을 안 붙이는 이유: 그 애너테이션은 `package:meta` 인데 이 패키지는
+  ///   의존성이 0 이다(README §패키지). 필드가 전부 `final` 이고 생성자가 `const` 라
+  ///   실제로 불변이므로 린트만 끈다.
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is HandwritingRevealTiming &&
+          other.primaryMinDuration == primaryMinDuration &&
+          other.primaryMaxDuration == primaryMaxDuration &&
+          other.primaryToCrossGap == primaryToCrossGap &&
+          other.crossStrokeDuration == crossStrokeDuration &&
+          other.crossStrokeGap == crossStrokeGap &&
+          other.crossToAnnotationGap == crossToAnnotationGap &&
+          other.annotationPerPixel == annotationPerPixel &&
+          other.annotationMinDuration == annotationMinDuration &&
+          other.annotationMaxDuration == annotationMaxDuration &&
+          other.annotationGap == annotationGap &&
+          other.strokeEase == strokeEase &&
+          other.annotationEase == annotationEase;
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => Object.hash(
+        primaryMinDuration,
+        primaryMaxDuration,
+        primaryToCrossGap,
+        crossStrokeDuration,
+        crossStrokeGap,
+        crossToAnnotationGap,
+        annotationPerPixel,
+        annotationMinDuration,
+        annotationMaxDuration,
+        annotationGap,
+        strokeEase,
+        annotationEase,
+      );
 }

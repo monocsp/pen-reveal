@@ -19,6 +19,18 @@ class LinearEase implements RevealEase {
 
   @override
   double timeOf(double within) => within.clamp(0.0, 1.0);
+
+  // ⚠️ 값 동등성이 필요하다 — `HandwritingRevealTiming` 의 `==` 가 ease 를 비교하는데,
+  //   여기 없으면 identity 비교가 되어 **런타임에 만든 ease 는 언제나 다르다**고 나온다.
+  //   기본값은 const 정규화 덕에 우연히 통과하지만 `build()` 안에서 조립하면 깨진다
+  //   (실측: 그 경로에서 계측대가 슬라이더 한 번에 수십 번 재굽었다).
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) => other is LinearEase;
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => (LinearEase).hashCode;
 }
 
 /// 사람이 펜을 그을 때의 속도감 — 짧게 붙었다 떼고, 가운데는 일정한 속도.
@@ -46,4 +58,14 @@ class PenEase implements RevealEase {
     if (y >= tailStart) return 1 - math.sqrt(2 * e * (1 - y) / peak);
     return y / peak + e / 2;
   }
+
+  // ⚠️ [LinearEase] 와 같은 이유 — 자세한 것은 그쪽 주석.
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) =>
+      other is PenEase && other.edgeFraction == edgeFraction;
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => edgeFraction.hashCode;
 }

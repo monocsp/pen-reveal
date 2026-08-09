@@ -1,0 +1,8 @@
+# 두 패키지와 같은 태그 규약을 쓴다.
+#
+#   `regression` — 합성 입력만 쓰므로 자산 없이 어디서나 돈다.
+#   `corpus`     — 정본 지도가 번들에 있어야 한다. 없으면 테스트가 **스스로** skip 한다
+#                  (여기서 `skip:` 을 걸지 않는 이유는 두 패키지의 dart_test.yaml 과 같다).
+tags:
+  regression:
+  corpus:

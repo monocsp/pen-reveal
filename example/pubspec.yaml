@@ -1,0 +1,30 @@
+name: pen_reveal_example
+description: pen_reveal 연출 계측대 — 위젯북으로 굽기·재생·단계를 눈으로 본다.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 위젯북은 **여기에만** 있다. 두 패키지는 그대로 깨끗하게 둔다
+  #   (pen_reveal 은 의존성 0, pen_reveal_flutter 는 flutter 뿐).
+  # ⚠️ 3.24 부터 Flutter >=3.44 를 요구한다. 이 레포의 SDK 는 3.41.1 이라 3.23 계열에 묶는다.
+  #   Flutter 를 올리면 상한을 풀어도 된다.
+  pen_reveal_flutter:
+    path: ../packages/pen_reveal_flutter
+  widgetbook: ">=3.23.0 <3.24.0"
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    # 정본 지도 — **레포에 없다**(디자인 자산이라 gitignore). 이 디렉터리는 비어 있을 수
+    #   있고, 그러면 계측대가 합성 입력으로 돌아간다. 채우는 법은 lib/fixtures/corpus_maps.dart.
+    - assets/maps/

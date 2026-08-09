@@ -106,11 +106,14 @@ OneStrokeResult bakeOneStrokeOrder(StrokeMask input) {
     return OneStrokeResult(out, 0);
   }
 
+  // ⚠️ **길이는 평활 전에, 그것도 순회 시계에서 잰다.** 평활은 시간장의 이음매를 퍼뜨리므로
+  //   최댓값이 조금 내려간다 — 그걸 길이로 쓰면 재생 시간이 같이 흔들린다. 길이는
+  //   "펜이 지나간 거리" 라 뼈대 순회가 낸 시계가 정본이다.
   var maxT = 0.0;
   for (final v in order.values) {
     if (v > maxT) maxT = v;
   }
-  final field = _spread(order, mask, w, h);
+  final field = _smoothField(_spread(order, mask, w, h), mask, w, h);
   final roi = Uint8List(w * h);
   for (var i = 0; i < roi.length; i++) {
     if (mask[i] == 0) {
@@ -431,6 +434,50 @@ void _pruneSpurs(Map<int, List<int>> adj, int minLen) {
     }
   }
 }
+
+/// 전파된 시간장의 **이음매를 퍼뜨린다** — 마스크 안에서만 3×3 평균을 [_smoothPasses] 회.
+///
+///   왜 필요한가: [_spread] 는 가장 가까운 뼈대의 시각을 **그대로 복사**한다. 거리는 소유권을
+///   정하는 데만 쓰고 값에는 안 쓴다. 그래서 시간장이 매끄러운 경사가 아니라 **뼈대 픽셀마다
+///   한 칸씩인 보로노이 판**이 된다 — 길 폭이 10px 이면 `10×1` 짜리 같은 값 덩어리다.
+///   그 판들이 선단을 지날 때 한꺼번에 열려 **블록 계단**으로 보인다(사용자 보고).
+///
+///   ⚠️ 홉 수 BFS 를 다익스트라로 바꿔 고립 구멍은 −92% 가 됐지만, 소유권 경계가 더 정확해진
+///   만큼 **경계가 길고 뚜렷해져** 선단 계단은 오히려 커졌다(실측: 선단 폭을 넘는 이웃 점프가
+///   44 → 65). 거리 정확도가 시간 연속성을 보장하지 않는다 — 그래서 두 단계가 다 필요하다.
+///
+///   평균 필터는 선형 경사에서는 항등에 가까워 정상 구간을 안 건드리고, 불연속만 퍼뜨린다.
+///   뼈대에 못 닿은 픽셀(`-1`)은 이웃으로도 안 쓰고 값도 안 바꾼다 — 맨 끝(254) 계약 유지.
+Float32List _smoothField(Float32List field, Uint8List mask, int w, int h) {
+  var src = field;
+  for (var pass = 0; pass < _smoothPasses; pass++) {
+    final dst = Float32List.fromList(src);
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        final i = y * w + x;
+        if (mask[i] != 1 || src[i] < 0) continue;
+        var sum = src[i];
+        var n = 1;
+        for (var k = 0; k < 8; k++) {
+          final ny = y + _dy[k];
+          final nx = x + _dx[k];
+          if (ny < 0 || ny >= h || nx < 0 || nx >= w) continue;
+          final j = ny * w + nx;
+          if (mask[j] != 1 || src[j] < 0) continue;
+          sum += src[j];
+          n++;
+        }
+        dst[i] = sum / n;
+      }
+    }
+    src = dst;
+  }
+  return src;
+}
+
+/// 평활 횟수. 3 회면 선단 폭(255/k ≈ 10.6 코드)을 넘는 이웃 점프가 0 이 된다(실측).
+///   더 돌리면 진짜 시각 불연속(획이 갈라졌다 만나는 자리)까지 뭉갠다.
+const int _smoothPasses = 3;
 
 /// 뼈대의 시각을 길 픽셀 전체로 — **가장 가까운** 뼈대의 값을 받는다.
 ///

@@ -58,6 +58,7 @@ Future<List<List<int>>> _paint({
       revealDuration: Duration.zero,
       sharpness: sharpness,
       stages: RevealStageMarks.single,
+      profile: RevealPrepareProfile.unmeasured,
     ),
     progress: progress,
   ).paint(ui.Canvas(recorder), Size(width.toDouble(), 1));
@@ -89,6 +90,7 @@ void main() {
       revealDuration: Duration.zero,
       sharpness: RevealSharpness.standard,
       stages: RevealStageMarks.single,
+      profile: RevealPrepareProfile.unmeasured,
     );
   });
 
@@ -242,6 +244,7 @@ void main() {
           revealDuration: Duration.zero,
           sharpness: RevealSharpness.standard,
           stages: RevealStageMarks.single,
+          profile: RevealPrepareProfile.unmeasured,
         ),
         progress: 0.2,
       );

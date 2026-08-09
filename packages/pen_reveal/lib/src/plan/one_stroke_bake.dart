@@ -113,7 +113,7 @@ OneStrokeResult bakeOneStrokeOrder(StrokeMask input) {
   for (final v in order.values) {
     if (v > maxT) maxT = v;
   }
-  final field = _smoothField(_spread(order, mask, w, h), mask, w, h);
+  final field = _smoothField(_brushSweep(order, mask, w, h), mask, w, h);
   final roi = Uint8List(w * h);
   for (var i = 0; i < roi.length; i++) {
     if (mask[i] == 0) {
@@ -435,49 +435,229 @@ void _pruneSpurs(Map<int, List<int>> adj, int minLen) {
   }
 }
 
-/// 전파된 시간장의 **이음매를 퍼뜨린다** — 마스크 안에서만 3×3 평균을 [_smoothPasses] 회.
+/// 붓이 지나간 자리를 칠한다 — **먼저 지나간 붓이 이긴다.**
 ///
-///   왜 필요한가: [_spread] 는 가장 가까운 뼈대의 시각을 **그대로 복사**한다. 거리는 소유권을
-///   정하는 데만 쓰고 값에는 안 쓴다. 그래서 시간장이 매끄러운 경사가 아니라 **뼈대 픽셀마다
-///   한 칸씩인 보로노이 판**이 된다 — 길 폭이 10px 이면 `10×1` 짜리 같은 값 덩어리다.
-///   그 판들이 선단을 지날 때 한꺼번에 열려 **블록 계단**으로 보인다(사용자 보고).
+///   [_spread] 는 픽셀마다 *가장 가까운* 뼈대의 시각을 가져온다. 획이 자기 위를 지나가는
+///   자리에서는 그게 틀린다. 고리를 그리다 앞서 그은 데를 다시 밟으면 그 겹친 자리의 잉크는
+///   **첫 붓이 이미 칠한 것**인데, 최근접 규칙은 그 자리를 두 팔이 반씩 나눠 갖게 하고
+///   경계를 1px 톱니로 남긴다. 재생 중에는 한쪽 팔만 드러나 있으므로 그 톱니가 그대로
+///   **하얀 길에 물어뜯긴 자국**으로 보인다 — 사장님이 map_deep_04 에서 본 것이 이것이다.
 ///
-///   ⚠️ 홉 수 BFS 를 다익스트라로 바꿔 고립 구멍은 −92% 가 됐지만, 소유권 경계가 더 정확해진
-///   만큼 **경계가 길고 뚜렷해져** 선단 계단은 오히려 커졌다(실측: 선단 폭을 넘는 이웃 점프가
-///   44 → 65). 거리 정확도가 시간 연속성을 보장하지 않는다 — 그래서 두 단계가 다 필요하다.
+///   실측(굽기 420, 길 세그먼트, 선단 폭 10.6 코드를 넘는 이웃 점프):
+///     · basic 3종 0~6개 · deep 6종 28~477개. 길 픽셀은 4배인데 점프는 30~80배다.
+///     · map_deep_04 의 192개가 전부 `x=109..217, y=164..185` — 고리가 자기 자신과
+///       접하는 가로 띠 하나에 몰려 있다. 곧은 구간에는 하나도 없다.
 ///
-///   평균 필터는 선형 경사에서는 항등에 가까워 정상 구간을 안 건드리고, 불연속만 퍼뜨린다.
-///   뼈대에 못 닿은 픽셀(`-1`)은 이웃으로도 안 쓰고 값도 안 바꾼다 — 맨 끝(254) 계약 유지.
-Float32List _smoothField(Float32List field, Uint8List mask, int w, int h) {
-  var src = field;
-  for (var pass = 0; pass < _smoothPasses; pass++) {
-    final dst = Float32List.fromList(src);
-    for (var y = 0; y < h; y++) {
-      for (var x = 0; x < w; x++) {
-        final i = y * w + x;
-        if (mask[i] != 1 || src[i] < 0) continue;
-        var sum = src[i];
-        var n = 1;
-        for (var k = 0; k < 8; k++) {
-          final ny = y + _dy[k];
-          final nx = x + _dx[k];
-          if (ny < 0 || ny >= h || nx < 0 || nx >= w) continue;
-          final j = ny * w + nx;
-          if (mask[j] != 1 || src[j] < 0) continue;
-          sum += src[j];
-          n++;
-        }
-        dst[i] = sum / n;
+///   그래서 최근접이 아니라 **붓 자국의 합집합**으로 칠한다. 뼈대 픽셀 `s` 는 자기 붓 반경
+///   `R(s)`(= 그 자리에서 길 가장자리까지의 거리) 만큼을 칠하고, 시각이 이른 붓부터
+///   칠하되 **이미 칠해진 자리는 덮지 않는다.** 결과는
+///
+///       F(x) = min { t(s) : dist(x, s) ≤ R(s) }
+///
+///   이고, 이것이 실제 펜의 물리다. 겹친 자리는 나뉘지 않고 먼저 지나간 시각을 갖는다 —
+///   X 의 겹치는 자리를 `\` 와 `/` 에 다 준 것과 같은 규칙이다.
+///
+///   ⚠️ **반경을 상수로 두면 안 된다.** 두 팔이 붙어 굵어진 자리는 가장자리까지의 거리가
+///   저절로 커져서 붓이 그만큼 넓게 칠한다 — 겹침을 덮으려면 정확히 그만큼이 필요하다.
+///   상수로 두면 좁은 데선 새고 넓은 데선 모자란다.
+///
+///   ⚠️ 붓이 못 닿은 픽셀(뼈대 끝의 바깥쪽 등)은 [_spread] 의 최근접 값으로 메운다.
+///   버리면 영영 안 드러나는 픽셀이 생긴다.
+Float32List _brushSweep(Map<int, double> t, Uint8List mask, int w, int h) {
+  final out = Float32List(w * h)..fillRange(0, w * h, -1);
+  if (t.isEmpty) return out;
+
+  final radius = _boundaryDistance(mask, w, h);
+  final seeds = t.keys.toList()
+    ..sort((a, b) {
+      final c = t[a]!.compareTo(t[b]!);
+      // 시각이 같으면 인덱스로 — 결정적이어야 골든이 흔들리지 않는다.
+      return c != 0 ? c : a.compareTo(b);
+    });
+
+  // 씨앗마다 새로 칠하는 범위 표시. `-1` 로 채우고 씨앗 번호를 적으면 매번 지울 필요가 없다.
+  final touched = Int32List(w * h)..fillRange(0, w * h, -1);
+  final stack = <int>[];
+
+  for (var si = 0; si < seeds.length; si++) {
+    final s = seeds[si];
+    final time = t[s]!;
+    // 뼈대는 길 안이라 반경이 0 일 수 없지만, 1px 두께 그림에서는 0.x 가 나온다.
+    //   최소 1 을 줘서 씨앗 자신은 반드시 칠하게 한다.
+    final r = radius[s] < 1 ? 1.0 : radius[s];
+    final rr = r * r;
+    final sx = s % w;
+    final sy = s ~/ w;
+    stack
+      ..clear()
+      ..add(s);
+    touched[s] = si;
+    while (stack.isNotEmpty) {
+      final p = stack.removeLast();
+      if (out[p] < 0) out[p] = time;
+      final px = p % w;
+      final py = p ~/ w;
+      for (var k = 0; k < 8; k++) {
+        final nx = px + _dx[k];
+        final ny = py + _dy[k];
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        final j = ny * w + nx;
+        if (mask[j] != 1 || touched[j] == si) continue;
+        final ddx = nx - sx;
+        final ddy = ny - sy;
+        if (ddx * ddx + ddy * ddy > rr) continue;
+        touched[j] = si;
+        stack.add(j);
       }
     }
+  }
+
+  // 붓이 못 닿은 자리만 최근접으로 메운다.
+  var missing = false;
+  for (var i = 0; i < out.length; i++) {
+    if (mask[i] == 1 && out[i] < 0) {
+      missing = true;
+      break;
+    }
+  }
+  if (missing) {
+    final near = _spread(t, mask, w, h);
+    for (var i = 0; i < out.length; i++) {
+      if (mask[i] == 1 && out[i] < 0) out[i] = near[i];
+    }
+  }
+  return out;
+}
+
+/// 마스크 안 각 픽셀에서 **바깥까지의 거리** — 8-이웃 경로 계량(직교 1, 대각 √2).
+///
+///   두 패스 챔퍼로 이 계량에서는 **정확히** 나온다. (유클리드를 근사하려 들면 오차가 남지만
+///   여기서 필요한 것은 전파에 쓰는 것과 같은 8-이웃 계량이라 근사가 아니다.)
+///
+///   캔버스 밖은 바깥으로 친다 — 잉크가 화면 끝에 붙으면 붓 반경이 거기서 줄어드는 게 맞다.
+Float32List _boundaryDistance(Uint8List mask, int w, int h) {
+  const diag = 1.4142135623730951;
+  const far = 1e9;
+  final d = Float32List(w * h);
+  for (var i = 0; i < w * h; i++) {
+    d[i] = mask[i] == 1 ? far : 0.0;
+  }
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      final i = y * w + x;
+      if (d[i] == 0) continue;
+      var best = d[i];
+      // 왼위·위·오른위·왼 — 이미 지나온 이웃 넷.
+      if (y > 0) {
+        if (x > 0 && d[i - w - 1] + diag < best) best = d[i - w - 1] + diag;
+        if (d[i - w] + 1 < best) best = d[i - w] + 1;
+        if (x + 1 < w && d[i - w + 1] + diag < best) best = d[i - w + 1] + diag;
+      } else {
+        best = 1; // 캔버스 위쪽 밖이 바깥이다.
+      }
+      if (x > 0) {
+        if (d[i - 1] + 1 < best) best = d[i - 1] + 1;
+      } else if (best > 1) {
+        best = 1;
+      }
+      d[i] = best;
+    }
+  }
+  for (var y = h - 1; y >= 0; y--) {
+    for (var x = w - 1; x >= 0; x--) {
+      final i = y * w + x;
+      if (mask[i] != 1) continue;
+      var best = d[i];
+      if (y + 1 < h) {
+        if (x + 1 < w && d[i + w + 1] + diag < best) best = d[i + w + 1] + diag;
+        if (d[i + w] + 1 < best) best = d[i + w] + 1;
+        if (x > 0 && d[i + w - 1] + diag < best) best = d[i + w - 1] + diag;
+      } else if (best > 1) {
+        best = 1;
+      }
+      if (x + 1 < w) {
+        if (d[i + 1] + 1 < best) best = d[i + 1] + 1;
+      } else if (best > 1) {
+        best = 1;
+      }
+      d[i] = best;
+    }
+  }
+  return d;
+}
+
+/// 전파된 시간장의 **이음매를 퍼뜨린다** — 마스크 안에서만 3×3 평균을 [_smoothPasses] 회.
+///
+///   왜 아직 필요한가: [_brushSweep] 이 겹침 이음매는 없앴지만, 붓 자국의 합집합은 여전히
+///   씨앗 단위 계단을 남긴다 — 붓 반경 R 만큼 앞선 시각이 통째로 들어오므로 경계가 서다.
+///   평균 필터는 선형 경사에서 항등에 가까워 정상 구간은 안 건드리고 불연속만 퍼뜨린다.
+///
+///   ⚠️ 뼈대에 못 닿은 픽셀(`-1`)은 이웃으로도 안 쓰고 값도 안 바꾼다 — 맨 끝(254) 계약 유지.
+///
+///   ⚠️ **잉크 픽셀만 훑는다.** ROI 안이라도 잉크는 그중 일부다(정본에서 캔버스 14만 px 중
+///   길은 1만 px). 매 패스 캔버스 전체를 돌면 열 배 넘게 헛돈다 — 자리 목록을 한 번 만들어
+///   재사용하고, 버퍼 두 벌을 번갈아 쓴다.
+Float32List _smoothField(Float32List field, Uint8List mask, int w, int h) {
+  if (_smoothPasses <= 0) return field;
+
+  var count = 0;
+  for (var i = 0; i < mask.length; i++) {
+    if (mask[i] == 1 && field[i] >= 0) count++;
+  }
+  if (count == 0) return field;
+  final at = Int32List(count);
+  var n = 0;
+  for (var i = 0; i < mask.length; i++) {
+    if (mask[i] == 1 && field[i] >= 0) at[n++] = i;
+  }
+
+  var src = field;
+  var dst = Float32List.fromList(src);
+  for (var pass = 0; pass < _smoothPasses; pass++) {
+    for (var s = 0; s < count; s++) {
+      final i = at[s];
+      final y = i ~/ w;
+      final x = i - y * w;
+      var sum = src[i];
+      var used = 1;
+      for (var k = 0; k < 8; k++) {
+        final ny = y + _dy[k];
+        final nx = x + _dx[k];
+        if (ny < 0 || ny >= h || nx < 0 || nx >= w) continue;
+        final j = ny * w + nx;
+        if (mask[j] != 1 || src[j] < 0) continue;
+        sum += src[j];
+        used++;
+      }
+      dst[i] = sum / used;
+    }
+    // 두 벌을 번갈아 쓴다 — 패스마다 새로 할당하면 그것만으로도 비싸다.
+    final swap = src;
     src = dst;
+    dst = swap;
   }
   return src;
 }
 
-/// 평활 횟수. 3 회면 선단 폭(255/k ≈ 10.6 코드)을 넘는 이웃 점프가 0 이 된다(실측).
-///   더 돌리면 진짜 시각 불연속(획이 갈라졌다 만나는 자리)까지 뭉갠다.
-const int _smoothPasses = 3;
+/// 평활 횟수.
+///
+///   ⚠️ **여기 "3 회면 점프가 0" 이라고 적혀 있었는데 거짓이었다.** 합성 도형에서만 참이고
+///   정본 deep 계열에서는 3 회로 한참 모자랐다(codex 지적). 합성만 보고 상수를 정한 대가다.
+///
+///   정본 10종 실측(굽기 420, 길 세그먼트, 열 지도 합계):
+///
+///       패스   선단 계단   만 최대 합   구멍 합
+///         0       287         37         43
+///         1       259         39         27
+///         2       161         40         25
+///         3       106         39         20
+///         4        88         29         18
+///         5        62         24         18      ← 여기
+///         6        43         26         18
+///
+///   6 회가 계단은 더 줄이지만 **만이 다시 늘어난다**(24 → 26) — 진짜 시각 불연속까지 뭉개기
+///   시작한다는 신호다. 계단만 보고 올리면 안 되는 이유가 이것이고, 그래서 두 지표를 같이 본다.
+const int _smoothPasses = 5;
 
 /// 뼈대의 시각을 길 픽셀 전체로 — **가장 가까운** 뼈대의 값을 받는다.
 ///

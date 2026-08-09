@@ -32,6 +32,7 @@ class PreparedReveal {
     required this.reveal,
     required this.revealDuration,
     required this.sharpness,
+    required this.stages,
   });
 
   /// 픽셀값 = 드러나는 시점(0~[RevealSharpness.maxOrderValue]).
@@ -51,6 +52,13 @@ class PreparedReveal {
   ///   둘을 묶는 테스트가 없었다 — 한쪽만 바꾸면 **연출이 끝나도 마지막 획이 반투명하게
   ///   남는다.** 굽기 결과가 자기 k 를 들고 다니면 그 어긋남이 문법적으로 불가능해진다.
   final RevealSharpness sharpness;
+
+  /// 연출을 셋으로 접은 경계(길 끝 / X 끝 / 전체 끝) — 0~1 진행도.
+  ///
+  ///   ⚠️ **텍스처에서 역추정할 수 없는 정보라 여기 실어 보낸다.** 굽고 나면 남는 것은
+  ///   픽셀당 시각뿐이라, "저 회색값이 길의 끝인지 X 의 시작인지"를 밖에서 알 방법이 없다.
+  ///   일정은 굽는 순간에만 존재하므로 그때 접어 두지 않으면 사라진다.
+  final RevealStageMarks stages;
 
   void dispose() => reveal.dispose();
 }
@@ -116,6 +124,7 @@ class RevealPreparer {
       revealDuration: schedule.total,
       // ⚠️ 상수를 다시 적지 않는다 — **구운 그 값**을 그대로 실어 보낸다.
       sharpness: compiler.sharpness,
+      stages: RevealStageMarks.of(plan, schedule),
     );
   }
 }

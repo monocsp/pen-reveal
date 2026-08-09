@@ -57,6 +57,7 @@ Future<List<List<int>>> _paint({
       reveal: reveal,
       revealDuration: Duration.zero,
       sharpness: sharpness,
+      stages: RevealStageMarks.single,
     ),
     progress: progress,
   ).paint(ui.Canvas(recorder), Size(width.toDouble(), 1));
@@ -87,6 +88,7 @@ void main() {
       reveal: reveal,
       revealDuration: Duration.zero,
       sharpness: RevealSharpness.standard,
+      stages: RevealStageMarks.single,
     );
   });
 
@@ -239,6 +241,7 @@ void main() {
           reveal: other,
           revealDuration: Duration.zero,
           sharpness: RevealSharpness.standard,
+          stages: RevealStageMarks.single,
         ),
         progress: 0.2,
       );

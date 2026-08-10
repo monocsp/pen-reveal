@@ -70,6 +70,7 @@ class RevealSharpness {
     final a = k * (progress.clamp(0.0, 1.0) * 255 - order);
     return a.clamp(0.0, 255.0);
   }
+
   // 값 동등성 — 손잡이로 `k` 를 갈아 끼우는 쪽에서 **값이 같으면 다시 굽지 않게** 한다.
   //   참조 동등성이면 매 build 마다 "바뀌었다" 가 되어 열 때마다 두 번 굽는다
   //   (`HandwritingRevealTiming` 이 같은 이유로 이미 갖고 있다).
@@ -81,5 +82,4 @@ class RevealSharpness {
   @override
   // ignore: avoid_equals_and_hash_code_on_mutable_classes
   int get hashCode => k.hashCode;
-
 }

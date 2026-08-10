@@ -245,7 +245,11 @@ const _kTranslucent = (interior: 34314, border: 1530);
 ///
 ///   왜 가르나: 리샘플러가 그림 밖을 물어 오면 **테두리만** 늘어나고(=엔진 쪽 이야기),
 ///   자산이 갈리면 안쪽이 움직인다(=자산 쪽 이야기). 합쳐 세면 다음 수를 못 정한다.
-({int interior, int border}) _alphaShape(Uint8List rgba, int width, int height) {
+({int interior, int border}) _alphaShape(
+  Uint8List rgba,
+  int width,
+  int height,
+) {
   var interior = 0;
   var border = 0;
   for (var y = 0; y < height; y++) {

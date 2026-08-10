@@ -70,7 +70,8 @@ void main() {
 
     test('계보가 가리키는 파일이 실제로 있다', () {
       final m = _load();
-      final derived = (m['derivedConstants'] as List).cast<Map<String, dynamic>>();
+      final derived =
+          (m['derivedConstants'] as List).cast<Map<String, dynamic>>();
       expect(derived, isNotEmpty, reason: '계보가 비었다 — 문서가 아무것도 안 말한다');
       for (final entry in derived) {
         final where = entry['where'] as String;
@@ -101,7 +102,8 @@ void main() {
           markTestSkipped('flutter --version 을 못 돌렸다');
           return;
         }
-        final info = jsonDecode(result.stdout as String) as Map<String, dynamic>;
+        final info =
+            jsonDecode(result.stdout as String) as Map<String, dynamic>;
         final now = info['frameworkVersion'] as String;
         expect(
           now,

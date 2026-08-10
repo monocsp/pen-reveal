@@ -76,7 +76,10 @@ void main() {
 
         // ignore: avoid_print
         print('\n══ $key @$_side ══  길 픽셀 '
-            '${[for (var i = 0; i < n; i++) if (roadIds.contains(plan.segmentId[i])) i].length}');
+            '${[
+          for (var i = 0; i < n; i++)
+            if (roadIds.contains(plan.segmentId[i])) i,
+        ].length}');
         // ignore: avoid_print
         print('  within 서로 다른 값 ${distinctWithin.length}종 '
             '(통은 0~65535) · order ${distinctOrder.length}종 (통은 0~254)');

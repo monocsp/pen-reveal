@@ -38,7 +38,9 @@ void main() {
       final stepWorst = <double, int>{for (final k in _ks) k: 0};
 
       // ignore: avoid_print
-      print('\n지도            k=24        k=32        k=40        k=48        k=64');
+      print(
+        '\n지도            k=24        k=32        k=40        k=48        k=64',
+      );
       // ignore: avoid_print
       print('                면적/계단   면적/계단   면적/계단   면적/계단   면적/계단');
 
@@ -107,7 +109,9 @@ void main() {
           bandTotal[k] = bandTotal[k]! + band;
           stepTotal[k] = stepTotal[k]! + steps;
           if (steps > stepWorst[k]!) stepWorst[k] = steps;
-          row.write('${band.toString().padLeft(6)}/${steps.toString().padLeft(4)}  ');
+          row.write(
+            '${band.toString().padLeft(6)}/${steps.toString().padLeft(4)}  ',
+          );
         }
         // ignore: avoid_print
         print('$row');
@@ -129,7 +133,9 @@ void main() {
       print('\n순서값 상한 maxOrderValue = 255 - ceil(255/k):');
       for (final k in _ks) {
         // ignore: avoid_print
-        print('  k=${k.toStringAsFixed(0).padLeft(3)} -> ${255 - (255 / k).ceil()}');
+        print(
+          '  k=${k.toStringAsFixed(0).padLeft(3)} -> ${255 - (255 / k).ceil()}',
+        );
       }
     },
     timeout: const Timeout(Duration(minutes: 15)),

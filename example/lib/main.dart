@@ -198,6 +198,13 @@ class _CorpusPicker extends StatefulWidget {
   State<_CorpusPicker> createState() => _CorpusPickerState();
 }
 
+/// 손잡이를 돌려도 **보던 지도를 계속 본다.**
+///
+///   위젯북은 손잡이가 바뀌면 use case 서브트리를 다시 세운다. State 가 같이 버려지면
+///   가파르기를 비교하려고 손잡이를 돌릴 때마다 첫 지도로 튕겨서, 정작 비교하려던 그림을
+///   못 본다 — A/B 가 목적인 손잡이가 A/B 를 막는 꼴이다. 고른 것을 밖에 둔다.
+String? _lastCorpusKey;
+
 class _CorpusPickerState extends State<_CorpusPicker> {
   List<String>? _keys;
   String? _selected;
@@ -209,7 +216,12 @@ class _CorpusPickerState extends State<_CorpusPicker> {
       if (!mounted) return;
       setState(() {
         _keys = keys;
-        _selected = keys.isEmpty ? null : keys.first;
+        final remembered = _lastCorpusKey;
+        _selected = keys.isEmpty
+            ? null
+            : (remembered != null && keys.contains(remembered)
+                ? remembered
+                : keys.first);
       });
     });
   }
@@ -251,7 +263,10 @@ class _CorpusPickerState extends State<_CorpusPicker> {
                   child: ChoiceChip(
                     label: Text(k, style: const TextStyle(fontSize: 11)),
                     selected: k == selected,
-                    onSelected: (_) => setState(() => _selected = k),
+                    onSelected: (_) => setState(() {
+                      _selected = k;
+                      _lastCorpusKey = k;
+                    }),
                   ),
                 ),
             ],

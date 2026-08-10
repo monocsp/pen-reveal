@@ -66,6 +66,20 @@ class RevealTextureCompiler {
     }
     return out;
   }
+
+  // 값 동등성 — [sharpness] 가 값으로 같으면 같은 컴파일러다. 굽기를 다시 할지 정하는
+  //   쪽(계측대의 가파르기 손잡이 등)이 이걸 본다. 참조 동등성이면 매 build 마다
+  //   "바뀌었다" 가 되어 열 때마다 두 번 굽는다 — `HandwritingRevealTiming` 이 같은
+  //   이유로 이미 값 동등성을 갖고 있다.
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is RevealTextureCompiler && other.sharpness == sharpness);
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => sharpness.hashCode;
 }
 
 /// 순서맵을 회색 RGBA 로 부풀린다 — 이미지 디코더에 그대로 넣는 형태다.

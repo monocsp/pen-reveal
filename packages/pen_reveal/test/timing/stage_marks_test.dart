@@ -140,5 +140,53 @@ void main() {
       expect(RevealStageMarks.single.hasCross, isFalse);
       expect(RevealStageMarks.single.hasAnnotation, isFalse);
     });
+
+    // ⚠️ **위의 시험들만으로는 `segmentId` 로 짝짓는지 확인이 안 된다.** 전부 정책이 낸
+    //   일정을 쓰는데 그 창은 세그먼트와 같은 순서로 나오므로, 조회를 `plan.segments[i]`
+    //   로 바꿔도 답이 똑같다 — 실제로 바꿔 보면 이 파일을 포함해 153개가 다 통과한다.
+    //   그래서 창 순서를 **일부러 흐트러뜨린** 일정을 직접 넘긴다.
+    test('창이 세그먼트 순서와 달라도 경계가 안 흔들린다', () {
+      final plan = _plan([
+        _seg(0, RevealSegmentKind.primaryStroke, relativeLength: 0.5),
+        _seg(1, RevealSegmentKind.crossBackslash),
+        _seg(2, RevealSegmentKind.crossSlash),
+        _seg(3, RevealSegmentKind.annotation),
+      ]);
+      // 3 · 0 · 2 · 1 순서. 위치로 짝지으면 첫 창(덩어리, 끝 1.0)이 길로 읽힌다.
+      const schedule = RevealSchedule(
+        windows: [
+          SegmentWindow(segmentId: 3, start: 0.8, end: 1, ease: LinearEase()),
+          SegmentWindow(segmentId: 0, start: 0, end: 0.4, ease: LinearEase()),
+          SegmentWindow(segmentId: 2, start: 0.6, end: 0.8, ease: LinearEase()),
+          SegmentWindow(segmentId: 1, start: 0.4, end: 0.6, ease: LinearEase()),
+        ],
+        total: Duration(seconds: 1),
+      );
+      final marks = RevealStageMarks.of(plan, schedule);
+
+      expect(marks.primaryEnd, closeTo(0.4, 1e-9), reason: '길 끝이 창 위치를 따라갔다');
+      expect(marks.crossEnd, closeTo(0.8, 1e-9), reason: 'X 끝이 창 위치를 따라갔다');
+      expect(marks.annotationEnd, closeTo(1, 1e-9));
+      // 위치 조회면 셋이 전부 1.0 으로 붙는다(단조성 보정이 끌어올린다).
+      expect(marks.primaryEnd, lessThan(marks.crossEnd));
+      expect(marks.crossEnd, lessThan(marks.annotationEnd));
+    });
+
+    test('계획에 없는 창은 조용히 건너뛴다 — 짝이 안 맞는 일정', () {
+      final plan = _plan([
+        _seg(0, RevealSegmentKind.primaryStroke, relativeLength: 0.5),
+      ]);
+      const schedule = RevealSchedule(
+        windows: [
+          SegmentWindow(segmentId: 0, start: 0, end: 0.5, ease: LinearEase()),
+          // 계획에 없는 id — 위치로 짝지으면 이것도 길로 세어 0.9 가 된다.
+          SegmentWindow(segmentId: 7, start: 0.5, end: 0.9, ease: LinearEase()),
+        ],
+        total: Duration(seconds: 1),
+      );
+      final marks = RevealStageMarks.of(plan, schedule);
+
+      expect(marks.primaryEnd, closeTo(0.5, 1e-9), reason: '모르는 창을 길로 셌다');
+    });
   });
 }

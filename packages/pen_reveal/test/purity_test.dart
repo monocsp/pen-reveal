@@ -24,7 +24,20 @@ const _forbidden = <String, String>{
 
 /// 시간 이름을 **에둘러** 들이는 것도 막는다 — `relativeMs`·`primaryDurationHint` 처럼
 ///   금칙 타입은 피하면서 뜻만 시간인 필드가 생기면 분리가 이름부터 무너진다.
-final _timeishName = RegExp(r'duration|millis|_ms\b', caseSensitive: false);
+///
+///   ⚠️ 예전엔 `duration|millis|_ms` 셋뿐이라 **뚫렸다.** `var elapsedClockSeconds = 0.0;`
+///   를 `lib/src/plan/` 에 심어도 초록이었다. 실제로 `one_stroke_bake.dart` 가 순회 누적
+///   거리를 `clock`, 씨앗 순번을 `time` 이라 부르고 있었다 — 둘 다 단위가 없는 값인데
+///   이름만 시간이라, 나중에 읽는 사람이 밀리초로 오해하기 딱 좋았다. 지금은 `cursor`·`at`
+///   이고 이 목록이 되돌아가는 것을 막는다.
+///
+///   ⚠️ **`second` 는 반드시 복수형으로 적는다.** 단수로 적으면 `cross_stroke_detector.dart`
+///   의 "2등 축"(`second`·`secondBest` …) 변수 15곳을 오탐해 게이트가 빨개진다.
+///   `Duration(seconds:)` 가 쓰는 이름은 어차피 복수형이다.
+final _timeishName = RegExp(
+  r'duration|millis|_ms\b|time|clock|elapsed|seconds\b|delay|pause',
+  caseSensitive: false,
+);
 
 const _planDir = 'lib/src/plan';
 const _timingDir = 'lib/src/timing';

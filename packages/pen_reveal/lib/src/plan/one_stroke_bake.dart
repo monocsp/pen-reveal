@@ -329,10 +329,10 @@ Map<int, double>? _oneStrokeOrder(
 
   final t = <int, double>{};
   final used = <int>{};
-  var clock = 0.0;
+  var cursor = 0.0;
   for (final start in _traversalStarts(adj)) {
     if (t.containsKey(start)) continue;
-    t[start] = clock;
+    t[start] = cursor;
     final stack = <int>[start];
     while (stack.isNotEmpty) {
       final v = stack.last;
@@ -352,8 +352,8 @@ Map<int, double>? _oneStrokeOrder(
         ..add(nxt * 1000003 + v);
       if (!t.containsKey(nxt)) {
         final diag = (v ~/ w != nxt ~/ w) && (v % w != nxt % w);
-        clock += diag ? 1.4142 : 1.0;
-        t[nxt] = clock;
+        cursor += diag ? 1.4142 : 1.0;
+        t[nxt] = cursor;
       }
       stack.add(nxt);
     }
@@ -481,7 +481,7 @@ Float32List _brushSweep(Map<int, double> t, Uint8List mask, int w, int h) {
 
   for (var si = 0; si < seeds.length; si++) {
     final s = seeds[si];
-    final time = t[s]!;
+    final at = t[s]!;
     // 뼈대는 길 안이라 반경이 0 일 수 없지만, 1px 두께 그림에서는 0.x 가 나온다.
     //   최소 1 을 줘서 씨앗 자신은 반드시 칠하게 한다.
     final r = radius[s] < 1 ? 1.0 : radius[s];
@@ -494,7 +494,7 @@ Float32List _brushSweep(Map<int, double> t, Uint8List mask, int w, int h) {
     touched[s] = si;
     while (stack.isNotEmpty) {
       final p = stack.removeLast();
-      if (out[p] < 0) out[p] = time;
+      if (out[p] < 0) out[p] = at;
       final px = p % w;
       final py = p ~/ w;
       for (var k = 0; k < 8; k++) {

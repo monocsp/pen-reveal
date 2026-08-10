@@ -470,8 +470,8 @@ void _addAnnotation(
       pixels: chunks[i].pixels,
       kind: RevealSegmentKind.annotation,
       w: w,
-      // 덩어리 안은 **왼→오** — 손으로 쓰는 방향이다. 별도 wipe 렌더가 필요 없다.
-      //   단 음절로 갈린 덩어리라면 자모 순서가 있으므로 그걸 쓴다.
+      // 음절로 갈렸으면 자모 순서를 쓰고, 아니면 `_addSegment` 가 행 우선으로 매긴다.
+      //   어느 쪽이든 덩어리 **안**은 위→아래다.
       progress: _jamoProgress(chunks[i], w),
       segmentId: segmentId,
       within: within,
@@ -527,7 +527,17 @@ Float32List? _jamoProgress(AnnotationChunk chunk, int w) {
 
 /// 세그먼트 하나를 평면 배열에 찍고 목록에 더한다.
 ///
-///   [progress] 가 `null` 이면 진행도를 **bbox 안의 x 위치**로 매긴다 — 왼→오 wipe.
+///   [progress] 가 `null` 이면 진행도를 **행 우선**(위→아래, 같은 줄은 좌→우)으로 매긴다.
+///
+///   ⚠️ **예전엔 여기가 bbox 안의 x 위치, 즉 좌→우 wipe 였다.** 그래서 규칙이 반쪽만
+///   지켜졌다 — 음절 힌트를 준 호출부만 [_jamoProgress] 로 행 우선을 받고, 힌트가 없으면
+///   (기본값이다) 덩어리가 통째로 옆으로 쓸렸다. 실측으로 갈렸다:
+///
+///       힌트 있음   corr(진행도, y) 0.85~1.00 · corr(진행도, x) 0.01~0.40   ← 위→아래
+///       힌트 없음   corr(진행도, x) **1.00**  · corr(진행도, y) ~0          ← 좌→우
+///
+///   규칙은 하나여야 한다. 폴백도 행 우선으로 두면 힌트 유무와 상관없이
+///   "덩어리는 좌→우, 덩어리 **안**은 위→아래" 가 지켜진다.
 void _addSegment({
   required Int32List pixels,
   required RevealSegmentKind kind,
@@ -552,14 +562,23 @@ void _addSegment({
     if (y < top) top = y;
     if (y > bottom) bottom = y;
   }
-  final span = right - left;
+  // 행 우선 폴백에 쓸 격자. 한 칸짜리면 나눌 게 없다.
+  final cols = right - left + 1;
+  final cells = (bottom - top + 1) * cols;
   for (var i = 0; i < pixels.length; i++) {
     final index = pixels[i];
     segmentId[index] = id;
-    final t = progress != null
-        ? progress[i]
-        // 폭이 1px 인 세로 획은 나눌 게 없다 — 통째로 한 번에 뜬다.
-        : (span <= 0 ? 1.0 : (index % w - left) / span);
+    final double t;
+    if (progress != null) {
+      t = progress[i];
+    } else if (cells <= 1) {
+      // 픽셀이 한 칸뿐이면 통째로 한 번에 뜬다.
+      t = 1;
+    } else {
+      final row = index ~/ w - top;
+      final col = index % w - left;
+      t = (row * cols + col) / (cells - 1);
+    }
     within[index] = (t.clamp(0.0, 1.0) * kRevealWithinScale).round();
   }
   segments.add(

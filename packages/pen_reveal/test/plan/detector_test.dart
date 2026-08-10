@@ -3,6 +3,7 @@
 //   ⚠️ 인공 장면이지만 **실지도의 비율을 흉내 낸다** — X 를 고르는 관문이 전부 비율
 //   (면적비·거리비)이라, 아무렇게나 그린 X 는 진짜 지도에서 통하는 규칙을 못 통과한다.
 //   여기서 지키는 계약: X 는 **길 위에** 찍힌 **X 크기**의 **두 막대** 덩어리다.
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:pen_reveal/plan.dart';
@@ -122,30 +123,58 @@ void main() {
     }
   });
 
-  test('덩어리 안의 진행도는 왼 → 오로 커진다', () {
+  // 규칙은 **덩어리는 좌→우, 덩어리 안은 위→아래**다.
+  //
+  //   ⚠️ 예전엔 이 시험이 "덩어리 안은 왼→오" 를 잠그고 있었다. 그건 `_addSegment` 의
+  //   폴백(bbox 안의 x 위치)을 그대로 옮겨 적은 것이고, 사장님이 준 규칙과 반대였다.
+  //   음절 힌트를 준 경로만 행 우선이었고 **기본값에서는 통째로 옆으로 쓸렸다** —
+  //   실측 corr(진행도, x) = 1.00. 폴백을 행 우선으로 고치면서 이 시험도 뜻을 바꾼다.
+  test('덩어리 안의 진행도는 위 → 아래로 커진다', () {
     final plan = detect();
     final chunk = plan.segments.lastWhere(
       (s) => s.kind == RevealSegmentKind.annotation,
     );
 
-    var leftmost = 1 << 30;
-    var rightmost = -1;
-    var atLeft = 1 << 30;
-    var atRight = -1;
+    var topmost = 1 << 30;
+    var bottommost = -1;
+    var atTop = 1 << 30;
+    var atBottom = -1;
     for (var i = 0; i < plan.segmentId.length; i++) {
       if (plan.segmentId[i] != chunk.id) continue;
-      final x = i % _w;
-      if (x < leftmost) {
-        leftmost = x;
-        atLeft = plan.within[i];
+      final y = i ~/ _w;
+      if (y < topmost) {
+        topmost = y;
+        atTop = plan.within[i];
       }
-      if (x > rightmost) {
-        rightmost = x;
-        atRight = plan.within[i];
+      if (y > bottommost) {
+        bottommost = y;
+        atBottom = plan.within[i];
       }
     }
-    expect(atLeft, 0);
-    expect(atRight, kRevealWithinScale);
+    expect(topmost, lessThan(bottommost), reason: '한 줄짜리면 이 시험이 뜻이 없다');
+    expect(atTop, lessThan(atBottom), reason: '아래가 위보다 먼저 드러난다');
+  });
+
+  // 방향이 **뒤집히지 않았는지**도 같이 본다 — 위 시험만으로는 "y 와 무관하게 흩어진"
+  //   경우를 못 가른다. 덩어리 안에서 진행도는 y 를 거의 그대로 따라가야 한다.
+  test('덩어리 안의 진행도는 y 를 따라간다 — x 가 아니라', () {
+    final plan = detect();
+    final chunk = plan.segments.lastWhere(
+      (s) => s.kind == RevealSegmentKind.annotation,
+    );
+    final xs = <double>[];
+    final ys = <double>[];
+    final ws = <double>[];
+    for (var i = 0; i < plan.segmentId.length; i++) {
+      if (plan.segmentId[i] != chunk.id) continue;
+      xs.add((i % _w).toDouble());
+      ys.add((i ~/ _w).toDouble());
+      ws.add(plan.within[i].toDouble());
+    }
+    final byY = _corr(ws, ys);
+    final byX = _corr(ws, xs);
+    expect(byY, greaterThan(0.9), reason: '진행도가 y 를 안 따라간다 (corr $byY)');
+    expect(byY, greaterThan(byX), reason: 'x 를 더 따라간다 — 좌→우 wipe 로 돌아갔다');
   });
 
   test('X 두 획은 픽셀을 나눠 갖고 겹치지 않는다', () {
@@ -339,4 +368,23 @@ void main() {
       );
     });
   });
+}
+
+/// 피어슨 상관계수 — 진행도가 어느 축을 따라가는지 가른다.
+double _corr(List<double> a, List<double> b) {
+  if (a.length < 2) return 0;
+  final ma = a.reduce((x, y) => x + y) / a.length;
+  final mb = b.reduce((x, y) => x + y) / b.length;
+  var top = 0.0;
+  var da = 0.0;
+  var db = 0.0;
+  for (var i = 0; i < a.length; i++) {
+    final u = a[i] - ma;
+    final v = b[i] - mb;
+    top += u * v;
+    da += u * u;
+    db += v * v;
+  }
+  if (da <= 0 || db <= 0) return 0;
+  return top / math.sqrt(da * db);
 }

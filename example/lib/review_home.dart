@@ -29,6 +29,7 @@ class _ReviewHomeState extends State<ReviewHome> {
   List<String>? _keys;
   String? _selected;
   double _k = 24;
+  var _speed = RevealSpeed.normal;
 
   @override
   void initState() {
@@ -82,7 +83,12 @@ class _ReviewHomeState extends State<ReviewHome> {
                   compiler: RevealTextureCompiler(
                     sharpness: RevealSharpness(_k),
                   ),
+                  timing: HandwritingRevealTiming(speed: _speed),
                 ),
+              ),
+              _SpeedBar(
+                value: _speed,
+                onChanged: (v) => setState(() => _speed = v),
               ),
               _SharpnessBar(
                 value: _k,
@@ -125,6 +131,67 @@ class _MapStrip extends StatelessWidget {
           },
         ),
       );
+}
+
+/// 단계별 배속 — 길·X·글씨를 따로 빠르게/느리게.
+///
+///   바깥에서 이 패키지를 쓸 때 쓰는 것이 그대로다 —
+///   `HandwritingRevealTiming(speed: RevealSpeed(road: 2, ...))`.
+class _SpeedBar extends StatelessWidget {
+  const _SpeedBar({required this.value, required this.onChanged});
+
+  final RevealSpeed value;
+  final ValueChanged<RevealSpeed> onChanged;
+
+  static const _steps = [0.5, 1.0, 2.0, 4.0];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    Widget row(String label, double now, RevealSpeed Function(double) set) =>
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 44,
+                child: Text(label, style: theme.textTheme.bodySmall),
+              ),
+              const SizedBox(width: 4),
+              for (final s in _steps)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: Text(
+                      '${s}x',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    selected: now == s,
+                    onSelected: (_) => onChanged(set(s)),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+            ],
+          ),
+        );
+
+    return Material(
+      color: theme.colorScheme.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('단계별 속도', style: theme.textTheme.titleSmall),
+            row('길', value.road, (s) => value.copyWith(road: s)),
+            row('X', value.cross, (s) => value.copyWith(cross: s)),
+            row('글씨', value.annotation, (s) => value.copyWith(annotation: s)),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// 가파르기 손잡이 — **이 화면의 본론이라 맨 아래 고정이다.**

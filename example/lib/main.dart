@@ -1,4 +1,12 @@
-// main.dart — 위젯북 진입점.
+// main.dart — 진입점.
+//
+//   ⚠️ **위젯북을 첫 화면으로 두지 않는다.** 켜면 위젯북 제 안내 카드(Docs·Deploy…)가
+//   먼저 뜨고, 볼 것까지 가려면 Navigation → 트리 펼치기 → use case → Knobs 로 네 번을
+//   건너야 한다. 개발자에겐 익숙해도 "이거 봐 주세요" 하고 건네는 물건으로는 못 쓴다.
+//   그래서 켜자마자 정본 연출과 가파르기 손잡이가 있는 [ReviewHome] 이 뜬다.
+//
+//   위젯북은 없애지 않는다 — 합성 도형·경계 조건처럼 개발 중에만 보는 것들이 거기 있다.
+//   오른쪽 위 플라스크 버튼으로 넘어간다.
 //
 //   코드젠(widgetbook_generator·build_runner)은 쓰지 않는다. 이 레포 정책이기도 하고,
 //   use case 가 열 개도 안 되는데 생성기를 붙일 이유가 없다. 트리를 손으로 적는다.
@@ -8,10 +16,35 @@ import 'package:flutter/material.dart';
 import 'package:pen_reveal_example/fixtures/corpus_maps.dart';
 import 'package:pen_reveal_example/fixtures/synthetic_map.dart';
 import 'package:pen_reveal_example/reveal_bench.dart';
+import 'package:pen_reveal_example/review_home.dart';
 import 'package:pen_reveal_flutter/pen_reveal_flutter.dart';
 import 'package:widgetbook/widgetbook.dart';
 
-void main() => runApp(const PenRevealBook());
+void main() => runApp(const PenRevealApp());
+
+/// 확인용 화면이 먼저, 위젯북은 그 안에서 연다.
+class PenRevealApp extends StatelessWidget {
+  const PenRevealApp({super.key});
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        title: 'pen_reveal',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorSchemeSeed: const Color(0xFF8B7868), // 정본 지도의 흙색.
+          useMaterial3: true,
+        ),
+        home: Builder(
+          builder: (context) => ReviewHome(
+            onOpenWorkbench: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const PenRevealBook(),
+              ),
+            ),
+          ),
+        ),
+      );
+}
 
 class PenRevealBook extends StatelessWidget {
   const PenRevealBook({super.key});

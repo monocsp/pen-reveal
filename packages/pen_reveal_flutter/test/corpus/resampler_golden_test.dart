@@ -148,7 +148,7 @@ void main() {
       //   라면, 이쪽은 "애초에 뜰 수 있는 모양인가"를 잠근다. 표를 채우기 전에도, 표를
       //   새로 뜬 직후에도 여기가 먼저 초록이어야 한다.
       test(
-        '리샘플 결과의 모양 — 긴 변 $kGoldenLongSide, 두 장이 같은 격자, 전부 불투명',
+        '리샘플 결과의 모양 — 긴 변 $kGoldenLongSide, 두 장이 같은 격자, 투명 분포가 그대로',
         () async {
           for (final key in kCorpusKeys) {
             final rgba = await loadCorpusRgba(key, kGoldenLongSide);
@@ -176,15 +176,20 @@ void main() {
                   '격자에서 뺀다',
             );
 
+            // ⚠️ **전부 불투명을 요구하지 않는다.** 정본은 투명 배경 위에 뜬 폴라로이드
+            //   카드라 카드 밖이 원래 비어 있다. 그 값을 **정확히** 못 박아, 자산이나
+            //   리샘플러가 움직이면 걸리게 한다(예산이 아니라 등호다 — 실측이 10종·두
+            //   층에서 한 값으로 같아서 느슨하게 잡을 이유가 없다).
             expect(
-              _nonOpaque(rgba.baseRgba, rgba.width, rgba.height),
-              isNull,
-              reason: '$key(base)',
+              _alphaShape(rgba.baseRgba, rgba.width, rgba.height),
+              _kTranslucent,
+              reason: '$key(base): 투명 픽셀 분포가 움직였다 — 자산이 바뀌었거나 '
+                  '리샘플러가 가장자리를 다르게 문다',
             );
             expect(
-              _nonOpaque(rgba.composedRgba, rgba.width, rgba.height),
-              isNull,
-              reason: '$key(composed)',
+              _alphaShape(rgba.composedRgba, rgba.width, rgba.height),
+              _kTranslucent,
+              reason: '$key(composed): 위와 같다',
             );
 
             // 바이트를 직접 비교하지 않는다 — 실패 메시지에 픽셀이 통째로 찍히면 그게
@@ -223,24 +228,37 @@ String _pasteBlock(Map<String, RgbaDigestPair> digests) {
 String _pasteLine(String key, RgbaDigestPair digest) =>
     "  '$key': (base: '${digest.base}', composed: '${digest.composed}'),";
 
-/// 알파가 255 가 아닌 픽셀을 센다 — 없으면 `null`.
+/// 정본 10종이 공유하는 투명 픽셀 분포 — 안쪽 / 테두리.
 ///
-///   왜 가장자리를 따로 세나: 리샘플러가 그림 밖을 물어 오면 테두리 한 줄만 반투명해진다
-///   (=엔진 쪽 이야기). 안쪽까지 비면 자산이 애초에 투명한 것이다(=자산 쪽 이야기).
-///   실패 메시지가 둘을 갈라 줘야 다음 수를 안다.
-String? _nonOpaque(Uint8List rgba, int width, int height) {
-  var total = 0;
+///   폴라로이드 카드가 투명 배경 위에 떠 있어서 카드 밖이 비어 있다. 10종이 같은 카드
+///   틀을 쓰므로 **열 장 · 두 층이 전부 같은 값**이다(실측). 지도마다 다른 예산을 둘
+///   이유가 없어 상수 하나로 잠근다.
+///
+///   ⚠️ 이 값이 0 이 아닌 것이 정상이다. 엔진은 `composedAlphaThreshold`(기본 200)로
+///   반투명 픽셀을 잉크에서 빼므로 연출에는 영향이 없다 — 카드 밖은 애초에 그릴 것이 없다.
+///
+///   ⚠️ 그래도 **잠그는 이유**: 여기가 움직이면 둘 중 하나다. 자산이 갈렸거나(디자인 쪽),
+///   리샘플러가 그림 밖을 다르게 물기 시작했거나(엔진 쪽). 둘 다 조용히 지나가면 안 된다.
+const _kTranslucent = (interior: 34314, border: 1530);
+
+/// 알파가 255 가 아닌 픽셀의 분포 — 안쪽과 테두리를 갈라 센다.
+///
+///   왜 가르나: 리샘플러가 그림 밖을 물어 오면 **테두리만** 늘어나고(=엔진 쪽 이야기),
+///   자산이 갈리면 안쪽이 움직인다(=자산 쪽 이야기). 합쳐 세면 다음 수를 못 정한다.
+({int interior, int border}) _alphaShape(Uint8List rgba, int width, int height) {
   var interior = 0;
+  var border = 0;
   for (var y = 0; y < height; y++) {
     for (var x = 0; x < width; x++) {
       if (rgba[(y * width + x) * 4 + 3] == 255) continue;
-      total++;
-      if (x > 0 && y > 0 && x < width - 1 && y < height - 1) interior++;
+      if (x > 0 && y > 0 && x < width - 1 && y < height - 1) {
+        interior++;
+      } else {
+        border++;
+      }
     }
   }
-  if (total == 0) return null;
-  return '반투명 픽셀 $total개(그중 안쪽 $interior개) — 안쪽이 0 이면 리샘플러가 그림 밖을 '
-      '물어 온 것이고, 안쪽이 있으면 자산 자체가 투명하다';
+  return (interior: interior, border: border);
 }
 
 // ── FNV-1a 64bit ──────────────────────────────────────────────────────────

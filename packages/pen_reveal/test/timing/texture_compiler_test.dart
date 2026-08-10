@@ -40,6 +40,7 @@ RevealPlan stripePlan({int width = 8, int segments = 2}) {
 }
 
 void main() {
+  _sharpnessEquality();
   const policy = HandwritingRevealTiming();
   const compiler = RevealTextureCompiler();
 
@@ -261,4 +262,44 @@ void rgba(Uint8List target, int at, int r, int g, int b) {
   target[at + 1] = g;
   target[at + 2] = b;
   target[at + 3] = 255;
+}
+
+// 값 동등성 — 계측대가 가파르기 손잡이를 돌릴 때 **값이 같으면 다시 안 굽게** 하려고 넣었다.
+//   참조 동등성이면 매 build 가 "바뀌었다" 가 되어 열 때마다 두 번 굽는다.
+//
+//   ⚠️ 인스턴스를 **런타임에** 만든다. `const RevealSharpness(32)` 두 개는 컴파일러가
+//   같은 객체로 접어 버려서 `identical` 가지에서 통과한다 — 그러면 `==` 를 지워도 초록이라
+//   시험이 아무것도 안 잰다. 그래서 값을 함수로 감싸 접힘을 막는다.
+RevealSharpness _sharp(double k) => RevealSharpness(k);
+
+RevealTextureCompiler _comp(double k) =>
+    RevealTextureCompiler(sharpness: _sharp(k));
+
+void _sharpnessEquality() {
+  group('값 동등성 — 같은 k 면 같은 컴파일러다', () {
+    test('RevealSharpness 는 k 로 비교한다', () {
+      expect(_sharp(32), _sharp(32));
+      expect(_sharp(32).hashCode, _sharp(32).hashCode);
+      expect(_sharp(32), isNot(_sharp(24)));
+      // 손잡이가 기본값으로 돌아왔을 때도 "같다" 여야 다시 안 굽는다.
+      expect(_sharp(24), RevealSharpness.standard);
+    });
+
+    test('RevealTextureCompiler 는 sharpness 로 비교한다', () {
+      expect(_comp(32), _comp(32));
+      expect(_comp(32).hashCode, _comp(32).hashCode);
+      expect(_comp(32), isNot(_comp(24)));
+      expect(_comp(24), const RevealTextureCompiler());
+    });
+
+    test('k 가 다르면 순서값 상한도 다르다 — 다시 구워야 하는 이유', () {
+      expect(_comp(24).maxOrderValue, 244);
+      expect(_comp(32).maxOrderValue, 247);
+      expect(
+        _comp(24).maxOrderValue,
+        isNot(_comp(32).maxOrderValue),
+        reason: 'k 를 바꾸면 텍스처가 달라진다 — 값 동등성이 굽기 재실행을 정한다',
+      );
+    });
+  });
 }

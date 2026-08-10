@@ -90,9 +90,32 @@ Widget _corpus(BuildContext context) {
     max: 8,
     divisions: 8,
   );
+  // 임계 가파르기 — **눈으로 정할 값이라 손잡이로 뺐다.**
+  //
+  //   `alpha = k·(진행도·255 − 순서값)` 이라 순서값이 임계에서 `255/k` 안에 있는 픽셀이
+  //   반투명하다. 길을 따라 순서값이 픽셀당 1 쯤 오르므로 그 띠가 진행 방향으로 약
+  //   `255/k` 픽셀 깔린다 — 곧은 구간에선 붓끝이지만, 고리가 접히는 자리에서는 같은 띠가
+  //   굽이를 감싸 넓은 면으로 보인다("차오르는" 느낌).
+  //
+  //   정본 10종 실측 — 올리면 면적은 줄고 선단은 딱딱해진다. 맞바꿈이라 정답이 없다:
+  //
+  //       k     반투명 면적 합   선단 계단 합   계단 0인 지도
+  //      24          5,490           219          8/10
+  //      32          4,142           309          6/10
+  //      40          3,489           431          4/10
+  //      48          3,008           618          4/10
+  //      64          2,109         1,283          4/10
+  final k = context.knobs.double.slider(
+    label: '임계 가파르기 k (선단 폭 = 255/k 코드)',
+    initialValue: 24,
+    min: 12,
+    max: 64,
+    divisions: 13,
+  );
   return _CorpusPicker(
     // 탐지 설정은 값 동등성이 없다 — key 로 바뀐 것을 알린다.
     key: ValueKey('syllables-$syllables'),
+    compiler: RevealTextureCompiler(sharpness: RevealSharpness(k)),
     detectConfig: RevealDetectConfig(
       annotation: AnnotationSegmenterConfig(
         expectedSyllableCount: syllables == 0 ? null : syllables,
@@ -162,11 +185,13 @@ class _CorpusPicker extends StatefulWidget {
     super.key,
     this.showGroundTruth = false,
     this.timing = const HandwritingRevealTiming(),
+    this.compiler = const RevealTextureCompiler(),
     this.detectConfig = const RevealDetectConfig(),
   });
 
   final bool showGroundTruth;
   final RevealTimingPolicy timing;
+  final RevealTextureCompiler compiler;
   final RevealDetectConfig detectConfig;
 
   @override
@@ -240,6 +265,7 @@ class _CorpusPickerState extends State<_CorpusPicker> {
             sourceLabel: '정본 · $selected',
             showGroundTruth: widget.showGroundTruth,
             timing: widget.timing,
+            compiler: widget.compiler,
             detectConfig: widget.detectConfig,
             source: () => loadCorpusMap(selected),
           ),

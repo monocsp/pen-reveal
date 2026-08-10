@@ -139,7 +139,10 @@ void main() {
         if (roadIds.contains(plan.segmentId[i]) && gradAt[i] == 0) flat.add(i);
       }
       if (flat.isNotEmpty) {
-        var minX = w, maxX = 0, minY = h, maxY = 0;
+        var minX = w;
+        var maxX = 0;
+        var minY = h;
+        var maxY = 0;
         for (final i in flat) {
           final x = i % w;
           final y = i ~/ w;

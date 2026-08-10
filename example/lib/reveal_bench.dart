@@ -34,6 +34,7 @@ class RevealBench extends StatefulWidget {
   const RevealBench({
     required this.source,
     this.timing = const HandwritingRevealTiming(),
+    this.compiler = const RevealTextureCompiler(),
     this.detectConfig = const RevealDetectConfig(),
     this.sourceLabel = '합성 지도',
     this.autoPlay = true,
@@ -46,6 +47,15 @@ class RevealBench extends StatefulWidget {
 
   /// 리듬. 밴드를 바꾸면 다시 굽는다(시간이 텍스처에 구워지므로).
   final RevealTimingPolicy timing;
+
+  /// 임계 가파르기를 들고 있는 컴파일러. **바뀌면 다시 굽는다** — `k` 가 순서값 상한
+  ///   (`255 − ⌈255/k⌉`)을 정하므로 텍스처 자체가 달라진다.
+  ///
+  ///   왜 손잡이로 빼나: `k` 는 선단이 번지는 폭(`255/k` 코드)을 정하는데, 그게 얼마나
+  ///   번져야 "펜"으로 보이는지는 **재서 정할 수 있는 값이 아니다.** 정본 실측으로는
+  ///   면적과 계단이 정확히 맞바꿔진다(k 24→64 에서 면적 0.38배, 계단 219→1283).
+  ///   어디가 좋은지는 눈으로 봐야 한다.
+  final RevealTextureCompiler compiler;
 
   /// 탐지 설정 — 음절 힌트 같은 것.
   ///
@@ -97,7 +107,11 @@ class _RevealBenchState extends State<RevealBench>
   @override
   void didUpdateWidget(RevealBench old) {
     super.didUpdateWidget(old);
-    if (old.timing != widget.timing) unawaited(_bake());
+    // ⚠️ `compiler` 도 본다 — `k` 가 순서값 상한을 정하므로 텍스처 자체가 달라진다.
+    //   둘 다 값 동등성이 있어서 손잡이가 제자리로 돌아오면 다시 굽지 않는다.
+    if (old.timing != widget.timing || old.compiler != widget.compiler) {
+      unawaited(_bake());
+    }
   }
 
   void _onTick() {
@@ -124,6 +138,7 @@ class _RevealBenchState extends State<RevealBench>
       final sourceTime = Duration(microseconds: clock.elapsedMicroseconds);
       final prepared = await RevealPreparer(
         timing: widget.timing,
+        compiler: widget.compiler,
         detectConfig: widget.detectConfig,
       ).prepare(base: pair.base, composed: pair.composed);
 

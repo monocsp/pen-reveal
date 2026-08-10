@@ -110,7 +110,7 @@ class _RevealBenchState extends State<RevealBench>
     // ⚠️ `compiler` 도 본다 — `k` 가 순서값 상한을 정하므로 텍스처 자체가 달라진다.
     //   둘 다 값 동등성이 있어서 손잡이가 제자리로 돌아오면 다시 굽지 않는다.
     if (old.timing != widget.timing || old.compiler != widget.compiler) {
-      unawaited(_bake());
+      unawaited(_bake(keepProgress: true));
     }
   }
 
@@ -129,7 +129,15 @@ class _RevealBenchState extends State<RevealBench>
     super.dispose();
   }
 
-  Future<void> _bake() async {
+  /// [keepProgress] — 손잡이만 바뀐 경우다. **보던 자리를 지킨다.**
+  ///
+  ///   ⚠️ 이게 없으면 손잡이가 무용지물이다. 값을 바꿀 때마다 진행도가 0 으로 돌아가
+  ///   끝까지 재생되는데, **끝난 화면은 어떤 값에서도 똑같다**(전부 불투명). 그래서
+  ///   슬라이더를 아무리 움직여도 "차이가 없다" 로 보인다 — 실제로 그렇게 보고받았다.
+  ///   비교가 목적인 손잡이는 비교할 프레임을 유지해야 한다.
+  Future<void> _bake({bool keepProgress = false}) async {
+    final resume = keepProgress ? _controller.value : 0.0;
+    final wasPlaying = keepProgress && _controller.isAnimating;
     final generation = ++_generation;
     setState(() => _error = null);
     try {
@@ -170,8 +178,14 @@ class _RevealBenchState extends State<RevealBench>
       }
       _controller
         ..duration = prepared.revealDuration
-        ..value = 0;
-      if (widget.autoPlay) _playTo(1);
+        ..value = resume;
+      // 처음 구울 때만 알아서 재생한다. 손잡이를 돌린 것뿐이면 멈춰 있던 것은 멈춘 채로,
+      //   돌고 있던 것은 그 자리에서 이어서.
+      if (keepProgress) {
+        if (wasPlaying) _playTo(1);
+      } else if (widget.autoPlay) {
+        _playTo(1);
+      }
     } catch (error) {
       if (!mounted || generation != _generation) return;
       setState(() => _error = error);

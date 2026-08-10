@@ -54,12 +54,32 @@ typedef RgbaDigestPair = ({String base, String composed});
 
 /// 기대 다이제스트 — `<key>` → 바닥·최종본의 FNV-1a 64bit.
 ///
-///   ⚠️ **비어 있는 것이 지금의 정상 상태다.** 이 값은 자산을 갖춘 기계에서만 잴 수 있고,
-///   이 레포에는 지도가 없다(파일 머리의 "표를 채우는 법" 참고). 비어 있으면 아래 첫
-///   테스트가 붙여 넣을 블록을 찍고 **일부러 실패한다** — 표 없이 조용히 초록이 되면
-///   골든이 아니라 그냥 통과다.
+///   ⚠️ **이 표는 "그 엔진에서 나온 바이트"라는 뜻이지 "옳은 바이트"라는 뜻이 아니다.**
+///   Flutter 를 올리면 리샘플러가 바뀌어 여기가 통째로 빨개질 수 있다. 그때 할 일은
+///   알고리즘을 의심하는 게 아니라 **표를 다시 뜨고 아래 버전을 고쳐 적는 것**이다.
+///   코퍼스 길이(`length_profile.dart`)가 같이 빨개졌는지 보면 둘을 가를 수 있다 —
+///   같이 움직였으면 엔진이고, 여기만 움직였으면 로더다.
+///
+///     잰 엔진 · Flutter 3.41.9 (stable, 00b0c91f06, 2026-04-29)
+///     잰 해상도 · 긴 변 420
+///     잰 자산 · corpus/maps/<key>/{base,composed}.png (879x1065)
+///
+///   ⚠️ 비어 있으면 아래 첫 테스트가 붙여 넣을 블록을 찍고 **일부러 실패한다** — 표 없이
+///   조용히 초록이 되면 골든이 아니라 그냥 통과다. 자산이 없는 기계에서는 `corpusSkip`
+///   이 먼저 걸려 여기까지 오지 않는다.
 const Map<String, RgbaDigestPair> kExpectedRgbaDigest =
-    <String, RgbaDigestPair>{};
+    <String, RgbaDigestPair>{
+  'map_basic_01': (base: '93a1f4daf628da1f', composed: '5c4335de0b9c6a8f'),
+  'map_basic_02': (base: '27fc9c48a7e097b8', composed: '82bd392e92647bc9'),
+  'map_basic_03': (base: '557f62c70f7e7144', composed: 'b751d326ffaa387e'),
+  'map_deep_01': (base: 'd5ee2940b4fb2019', composed: '9457933bea7baba2'),
+  'map_deep_02': (base: '8126d08871563612', composed: '3948e1cf1de4fbcb'),
+  'map_deep_03': (base: '8686fb1bd166f3a5', composed: 'aaa49239877c607a'),
+  'map_deep_04': (base: '2730afcee7598648', composed: 'b16a177dc5b8597f'),
+  'map_deep_05': (base: '88e024ebee3fc4c6', composed: 'e63eab7a20fe39bd'),
+  'map_deep_06': (base: 'd81c3ba334e974cb', composed: 'f591d28a07a12330'),
+  'map_special_01': (base: '5f0bd40cb5b2272f', composed: '4ffa3b3602bd84d1'),
+};
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

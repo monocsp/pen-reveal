@@ -114,6 +114,8 @@ OneStrokeResult bakeOneStrokeOrder(StrokeMask input) {
     if (v > maxT) maxT = v;
   }
   final field = _smoothField(_brushSweep(order, mask, w, h), mask, w, h);
+  // 획이 아닌 조각은 **처음부터 있던 것**으로 돌린다.
+  _flattenNonStrokes(field, mask, w, h);
   final roi = Uint8List(w * h);
   for (var i = 0; i < roi.length; i++) {
     if (mask[i] == 0) {
@@ -128,6 +130,81 @@ OneStrokeResult bakeOneStrokeOrder(StrokeMask input) {
   _blit(out, fullW, left, top, roi, w, h);
   return OneStrokeResult(out, maxT);
 }
+
+
+/// 굵기가 획이라 하기엔 너무 얇은 덩어리를 **시각 0 으로 눕힌다** — 처음부터 있던 것으로.
+///
+///   ⚠️ 무엇을 고치나: 정본의 바닥과 최종본은 따로 내보낸 PNG 라, 지도 위쪽 **찢어진 종이
+///   가장자리**가 서로 미세하게 어긋난다. 그 어긋남이 "변한 곳" 으로 잡혀 길이 되고,
+///   본체와 **끊긴** 덩어리라 세선화가 거기에도 뼈대를 만들어 **독립된 획**으로 순서를 받는다.
+///   실측(굽기 420): 길 덩어리가 네 개인데 셋이 y 71~78 의 가장자리 조각이다 —
+///   map_deep_05 는 203·20·1px, map_deep_04 는 129·19·1px. 순서값은 지도마다 제멋대로라
+///   deep_05 는 140(길의 맨 끝), deep_04 는 0(맨 처음)에 켜졌다.
+///
+///   화면에서는 **펜이 저 아래 있는데 위쪽 띠 200px 이 한 프레임에 통째로 켜지는** 것으로
+///   보인다. 사장님이 "선이 진행되는 곳이 아닌데 자라난다" 고 한 것이 이것이다.
+///
+///   ⚠️ **버리지 않는다.** 시각 0 이면 진행도 0 부터 불투명하므로 진행도 1 의 최종본은
+///   그대로다(픽셀 하나도 안 버린다는 규약). 종이 가장자리는 그리는 것이 아니라 원래
+///   거기 있던 것이니 의미로도 맞다.
+///
+///   ⚠️ **크기가 아니라 굵기로 가른다.** 크기로 자르면 짧지만 진짜인 획(반짝임·서명)을
+///   같이 눕힌다. 가장자리 조각은 8px 두께인데 정본의 길은 20px 다 — 굵기는 두 배 넘게
+///   갈린다. 굵기는 그 덩어리 안에서 가장자리까지 가장 먼 거리(= 붓 반경의 최댓값)로 잰다.
+void _flattenNonStrokes(Float32List field, Uint8List mask, int w, int h) {
+  final radius = _boundaryDistance(mask, w, h);
+  final seen = Uint8List(w * h);
+  final members = <int>[];
+  // 먼저 가장 굵은 덩어리를 찾는다 — 기준은 그림마다 다르므로 상대값으로 잡는다.
+  final peaks = <double>[];
+  final groups = <List<int>>[];
+  for (var start = 0; start < w * h; start++) {
+    if (mask[start] == 0 || seen[start] == 1) continue;
+    members.clear();
+    var peak = 0.0;
+    final stack = <int>[start];
+    seen[start] = 1;
+    while (stack.isNotEmpty) {
+      final p = stack.removeLast();
+      members.add(p);
+      if (radius[p] > peak) peak = radius[p];
+      final x = p % w;
+      final y = p ~/ w;
+      for (var k = 0; k < 8; k++) {
+        final nx = x + _dx[k];
+        final ny = y + _dy[k];
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        final j = ny * w + nx;
+        if (mask[j] == 1 && seen[j] == 0) {
+          seen[j] = 1;
+          stack.add(j);
+        }
+      }
+    }
+    peaks.add(peak);
+    groups.add([...members]);
+  }
+  if (groups.length < 2) return;
+
+  var thickest = 0.0;
+  for (final p in peaks) {
+    if (p > thickest) thickest = p;
+  }
+  if (thickest <= 0) return;
+
+  for (var g = 0; g < groups.length; g++) {
+    if (peaks[g] >= thickest * _strokeThicknessRatio) continue;
+    for (final i in groups[g]) {
+      field[i] = 0;
+    }
+  }
+}
+
+/// 획으로 치는 최소 굵기 — 가장 굵은 덩어리 대비 비율.
+///
+///   실측(정본 10종, 굽기 420): 길 본체의 최대 반경은 9~11 이고 찢어진 가장자리 조각은
+///   2~4 다. 0.5 면 둘 사이가 넉넉히 갈린다. 값을 올리면 진짜로 가는 획을 눕히기 시작한다.
+const double _strokeThicknessRatio = 0.5;
 
 /// 잉크 상자 둘레 여백.
 ///

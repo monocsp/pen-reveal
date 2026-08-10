@@ -39,7 +39,12 @@ class SegmentWindow {
 class RevealSchedule {
   const RevealSchedule({required this.windows, required this.total});
 
-  /// [RevealPlan.segments] 와 같은 순서.
+  /// ⚠️ **순서는 계약이 아니다.** 오늘 [HandwritingRevealTiming] 은 [RevealPlan.segments]
+  ///   와 같은 순서로 내지만 그건 그 정책의 내부 사정이다. 읽는 쪽은 [SegmentWindow.segmentId]
+  ///   로 짝지어야 한다 — 정책이 창을 거르거나 재정렬해도 안 깨진다.
+  ///
+  ///   `texture_compiler.dart` 와 `stage_marks.dart` 가 그렇게 짝짓고,
+  ///   `stage_marks_test.dart` 의 "창이 세그먼트 순서와 달라도" 가 그 규약을 잠근다.
   final List<SegmentWindow> windows;
 
   /// 애니메이션 컨트롤러에 넣을 길이.

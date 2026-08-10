@@ -100,8 +100,9 @@ void main() {
             for (final s in plan.segments)
               if (s.kind == RevealSegmentKind.primaryStroke) s.id,
           };
-          final frames =
-              (schedule.total.inMilliseconds * 60 / 1000).round().clamp(2, 2000);
+          final frames = (schedule.total.inMilliseconds * 60 / 1000)
+              .round()
+              .clamp(2, 2000);
           final step = 1.0 / frames;
 
           Uint8List opaque(double p) {
@@ -115,10 +116,10 @@ void main() {
 
           var prev = opaque(_from - step);
           // ⚠️ **길 단계가 끝나는 데서 멈추면 안 된다.** 길 픽셀이라고 길 단계 안에
-            //   드러나는 것은 아니다 — 고치기 전 map_deep_05 의 가장자리 조각은 순서값
-            //   140 을 받아 길 끝(0.57) **뒤인** 0.59 에 켜졌다. 거기서 멈추면 이 시험이
-            //   겨냥한 바로 그 경우를 놓친다(실제로 놓쳤다).
-            for (var p = _from; p < 1.0; p += step) {
+          //   드러나는 것은 아니다 — 고치기 전 map_deep_05 의 가장자리 조각은 순서값
+          //   140 을 받아 길 끝(0.57) **뒤인** 0.59 에 켜졌다. 거기서 멈추면 이 시험이
+          //   겨냥한 바로 그 경우를 놓친다(실제로 놓쳤다).
+          for (var p = _from; p < 1.0; p += step) {
             final now = opaque(p);
             // 새로 켜진 픽셀의 상자.
             var minX = w;

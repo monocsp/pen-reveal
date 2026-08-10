@@ -131,7 +131,6 @@ OneStrokeResult bakeOneStrokeOrder(StrokeMask input) {
   return OneStrokeResult(out, maxT);
 }
 
-
 /// 굵기가 획이라 하기엔 너무 얇은 덩어리를 **시각 0 으로 눕힌다** — 처음부터 있던 것으로.
 ///
 ///   ⚠️ 무엇을 고치나: 정본의 바닥과 최종본은 따로 내보낸 PNG 라, 지도 위쪽 **찢어진 종이

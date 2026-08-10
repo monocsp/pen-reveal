@@ -84,14 +84,18 @@ void main() {
         }
       }
       grad.sort();
-      String pct(int p) => grad[(grad.length * p / 100).floor().clamp(0, grad.length - 1)].toString();
+      String pct(int p) =>
+          grad[(grad.length * p / 100).floor().clamp(0, grad.length - 1)]
+              .toString();
 
       // ignore: avoid_print
       print('\n[$_key @$_side] 길 픽셀 ${grad.length}개 · 가파르기 k=$k');
       // ignore: avoid_print
       print('선단 폭(반투명이 되는 순서값 구간) = 255/k = ${(255 / k).toStringAsFixed(1)}');
       // ignore: avoid_print
-      print('국소 기울기 분위 — 10%:${pct(10)}  50%:${pct(50)}  90%:${pct(90)}  최대:${grad.last}');
+      print(
+        '국소 기울기 분위 — 10%:${pct(10)}  50%:${pct(50)}  90%:${pct(90)}  최대:${grad.last}',
+      );
       // ignore: avoid_print
       print('기울기 0 인 길 픽셀: ${grad.where((g) => g == 0).length}개'
           ' (${(grad.where((g) => g == 0).length * 100 / grad.length).toStringAsFixed(1)}%)');

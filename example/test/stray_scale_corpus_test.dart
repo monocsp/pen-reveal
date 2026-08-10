@@ -110,7 +110,8 @@ void main() {
           for (final side in _sides) {
             final size = fitImageLongSide(pair.composed, side);
             final base = await rgbaAt(pair.base, size.width, size.height);
-            final composed = await rgbaAt(pair.composed, size.width, size.height);
+            final composed =
+                await rgbaAt(pair.composed, size.width, size.height);
             // 규칙을 **끄고** 날것을 본다 — 켜면 흡수된 뒤라 아무것도 안 보인다.
             final plan = detectReveal(
               RevealDetectInput(

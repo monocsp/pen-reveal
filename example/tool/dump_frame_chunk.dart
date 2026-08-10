@@ -155,7 +155,9 @@ void main() {
         print('  길 $roadPx px · 순서값 $lo~$hi (${used.length}종) · '
             '재생 ${total}ms = $frames프레임');
         // ignore: avoid_print
-        print('  길 픽셀 ÷ 순서값 종수 = ${(roadPx / used.length).toStringAsFixed(1)} px/단계');
+        print(
+          '  길 픽셀 ÷ 순서값 종수 = ${(roadPx / used.length).toStringAsFixed(1)} px/단계',
+        );
         // ignore: avoid_print
         print('  한 프레임 최대 덩어리 ${worst}px (진행도 ${worstAt.toStringAsFixed(3)})'
             ' · 평균 ${(chunkySum / chunkyFrames).toStringAsFixed(1)}px');

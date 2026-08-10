@@ -10,6 +10,7 @@
 library;
 
 export 'src/timing/ease.dart';
+export 'src/timing/reveal_speed.dart';
 export 'src/timing/sharpness.dart';
 export 'src/timing/stage_marks.dart';
 export 'src/timing/texture_compiler.dart';

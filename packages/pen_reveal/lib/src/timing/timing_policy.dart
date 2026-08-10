@@ -16,6 +16,7 @@
 //   순수 Dart 다 — 굽기를 통째로 isolate 에 태울 수 있다.
 import 'package:pen_reveal/src/plan/reveal_plan.dart';
 import 'package:pen_reveal/src/timing/ease.dart';
+import 'package:pen_reveal/src/timing/reveal_speed.dart';
 
 /// 세그먼트 하나가 전체 타임라인에서 차지하는 구간.
 class SegmentWindow {
@@ -78,6 +79,7 @@ class HandwritingRevealTiming implements RevealTimingPolicy {
     this.annotationGap = const Duration(milliseconds: 30),
     this.strokeEase = const PenEase(),
     this.annotationEase = const LinearEase(),
+    this.speed = RevealSpeed.normal,
   });
 
   /// 주 획을 긋는 시간의 **밴드** — 코퍼스 최단이 [primaryMinDuration], 최장이
@@ -123,6 +125,13 @@ class HandwritingRevealTiming implements RevealTimingPolicy {
   /// 문구 덩어리의 가감속 — 짧아서 가감속이 오히려 어색하다.
   final RevealEase annotationEase;
 
+  /// 단계별 배속 — 바깥에서 "길·X·글씨" 를 따로 빠르게/느리게 할 때 쓴다.
+  ///
+  ///   위의 열두 손잡이는 저수준이라 한 단계를 옮기려면 여러 값을 **같이** 맞춰야 하고,
+  ///   하나만 고치면 실측으로 잡아 둔 비율이 조용히 깨진다. 배속은 비율을 그대로 두고
+  ///   단계를 통째로 늘이거나 줄인다.
+  final RevealSpeed speed;
+
   @override
   RevealSchedule schedule(RevealPlan plan) {
     if (plan.isEmpty) {
@@ -143,24 +152,44 @@ class HandwritingRevealTiming implements RevealTimingPolicy {
         case RevealSegmentKind.primaryStroke:
           gaps.add(0);
           // 픽셀은 안 본다 — 구조 층이 접어 준 0~1 만.
-          spans.add(_primaryMillis(segment.relativeLength, segment.id));
+          spans.add(
+            speed.scale(
+              _primaryMillis(segment.relativeLength, segment.id),
+              speed.road,
+            ),
+          );
           eases.add(strokeEase);
         case RevealSegmentKind.crossBackslash:
-          gaps.add(i == 0 ? 0 : primaryToCrossGap.inMilliseconds);
-          spans.add(crossStrokeDuration.inMilliseconds);
+          gaps.add(
+            i == 0
+                ? 0
+                : speed.scale(primaryToCrossGap.inMilliseconds, speed.gaps),
+          );
+          spans.add(
+            speed.scale(crossStrokeDuration.inMilliseconds, speed.cross),
+          );
           eases.add(strokeEase);
         case RevealSegmentKind.crossSlash:
-          gaps.add(i == 0 ? 0 : crossStrokeGap.inMilliseconds);
-          spans.add(crossStrokeDuration.inMilliseconds);
+          gaps.add(
+            i == 0 ? 0 : speed.scale(crossStrokeGap.inMilliseconds, speed.gaps),
+          );
+          spans.add(
+            speed.scale(crossStrokeDuration.inMilliseconds, speed.cross),
+          );
           eases.add(strokeEase);
         case RevealSegmentKind.annotation:
           gaps.add(
             i == 0
                 ? 0
-                : (sawAnnotation ? annotationGap : crossToAnnotationGap)
-                    .inMilliseconds,
+                : speed.scale(
+                    (sawAnnotation ? annotationGap : crossToAnnotationGap)
+                        .inMilliseconds,
+                    speed.gaps,
+                  ),
           );
-          spans.add(_annotationMillis(segment.measure));
+          spans.add(
+            speed.scale(_annotationMillis(segment.measure), speed.annotation),
+          );
           eases.add(annotationEase);
           sawAnnotation = true;
       }
@@ -249,7 +278,10 @@ class HandwritingRevealTiming implements RevealTimingPolicy {
           other.annotationMaxDuration == annotationMaxDuration &&
           other.annotationGap == annotationGap &&
           other.strokeEase == strokeEase &&
-          other.annotationEase == annotationEase;
+          other.annotationEase == annotationEase &&
+          // ⚠️ 배속을 빠뜨리면 계측대가 손잡이를 돌려도 **다시 굽지 않는다** —
+          //   값이 같다고 판단해 옛 텍스처를 그대로 쓴다.
+          other.speed == speed;
 
   @override
   // ignore: avoid_equals_and_hash_code_on_mutable_classes
@@ -266,5 +298,6 @@ class HandwritingRevealTiming implements RevealTimingPolicy {
         annotationGap,
         strokeEase,
         annotationEase,
+        speed,
       );
 }

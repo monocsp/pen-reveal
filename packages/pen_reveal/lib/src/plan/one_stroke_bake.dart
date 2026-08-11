@@ -413,7 +413,21 @@ Map<int, double>? _oneStrokeOrder(
   if (adj.isEmpty) return null;
 
   final t = <int, double>{};
-  final used = <int>{};
+  // ⚠️ **변마다 "몇 번 더 지날 수 있나" 를 센다.** `adj` 는 누가 이어져 있는지만 말하고,
+  //   같은 변을 두 번 지나야 하는지는 여기가 말한다.
+  //
+  //   왜 두 번 지나나: 그림에 T 자 갈림길은 없다. **선이 자기 자신과 나란히 붙었다
+  //   갈라지는** 자리가 있을 뿐이다. 얇게 깎으면 그 붙은 구간이 한 줄이 되어 양끝이
+  //   갈래 3 처럼 보인다 — 실측 다리 길이 special_01 24 · deep_04 45 는 "두 가닥이
+  //   그만큼 나란히 붙어 있었다" 는 뜻이다. 원래 가닥이 둘이니 펜이 두 번 지나는 것이
+  //   맞고, 그러면 양끝이 갈래 4 가 되어 짝이 맞는다.
+  final remaining = <int, int>{};
+  for (final e in adj.entries) {
+    for (final n in e.value) {
+      remaining[e.key * 1000003 + n] = 1;
+    }
+  }
+  _pairOddVertices(adj, remaining, w);
   var cursor = 0.0;
   for (final start in _traversalStarts(adj)) {
     if (t.containsKey(start)) continue;
@@ -422,7 +436,7 @@ Map<int, double>? _oneStrokeOrder(
     //   예전엔 DFS 가 내려가면서 첫 방문에 찍었다. 그러면 가지 하나를 끝까지 그리고
     //   갈림길로 되돌아온 순간 다음 가지가 시작되어, 화면에서 붓끝이 **순간이동**한다.
     //   걷기의 이웃한 두 점은 언제나 8-이웃이라 그럴 수가 없다.
-    final route = _eulerRoute(adj, start, used, w);
+    final route = _eulerRoute(adj, start, remaining, w);
     for (var i = 0; i < route.length; i++) {
       final v = route[i];
       if (i > 0) {
@@ -458,7 +472,7 @@ int? _straightestNext(
   List<int> candidates,
   int v,
   int? prev,
-  Set<int> used,
+  Map<int, int> remaining,
   int w,
 ) {
   final iny = prev == null ? 1.0 : (v ~/ w - prev ~/ w).toDouble();
@@ -470,7 +484,7 @@ int? _straightestNext(
   int? fallback;
   var fallbackScore = -2.0;
   for (final cand in candidates) {
-    if (used.contains(v * 1000003 + cand)) continue;
+    if ((remaining[v * 1000003 + cand] ?? 0) <= 0) continue;
     final dy = (cand ~/ w - v ~/ w).toDouble();
     final dx = (cand % w - v % w).toDouble();
     final outLen = math.sqrt(dy * dy + dx * dx);
@@ -497,7 +511,7 @@ int? _straightestNext(
 List<int> _eulerRoute(
   Map<int, List<int>> adj,
   int start,
-  Set<int> used,
+  Map<int, int> remaining,
   int w,
 ) {
   final stack = <int>[start];
@@ -505,15 +519,80 @@ List<int> _eulerRoute(
   while (stack.isNotEmpty) {
     final v = stack.last;
     final prev = stack.length >= 2 ? stack[stack.length - 2] : null;
-    final nxt = _straightestNext(adj[v] ?? const <int>[], v, prev, used, w);
+    final nxt =
+        _straightestNext(adj[v] ?? const <int>[], v, prev, remaining, w);
     if (nxt == null) {
       out.add(stack.removeLast());
       continue;
     }
-    used
-      ..add(v * 1000003 + nxt)
-      ..add(nxt * 1000003 + v);
+    remaining[v * 1000003 + nxt] = remaining[v * 1000003 + nxt]! - 1;
+    remaining[nxt * 1000003 + v] = remaining[nxt * 1000003 + v]! - 1;
     stack.add(nxt);
+  }
+  return out.reversed.toList();
+}
+
+/// 짝이 안 맞는 자리끼리 이어, 그 사이를 **두 번 지나게** 한다.
+///
+///   갈래가 홀수인 자리는 펜이 "거기서 시작하거나 끝나야" 만 괜찮다. 그런 자리가 셋
+///   이상이면 한 붓으로 못 그린다. 획의 시작과 끝 둘만 남기고, 나머지를 둘씩 짝지어
+///   그 사이 최단 경로의 변을 **한 번 더** 지날 수 있게 표시한다.
+///
+///   ⚠️ 짝짓는 것은 **끝점(차수 1)을 뺀** 홀수 자리들이다. 끝점 둘은 홀수로 남아야
+///   거기서 시작하고 거기서 끝난다.
+void _pairOddVertices(
+  Map<int, List<int>> adj,
+  Map<int, int> remaining,
+  int w,
+) {
+  final odd = <int>[
+    for (final e in adj.entries)
+      if (e.value.length.isOdd && e.value.length != 1) e.key,
+  ]..sort();
+  // 가까운 것끼리 짝짓는다 — 되짚는 거리가 짧을수록 좋다.
+  final open = [...odd];
+  while (open.length >= 2) {
+    final a = open.removeAt(0);
+    var bestI = 0;
+    var bestPath = <int>[];
+    for (var i = 0; i < open.length; i++) {
+      final path = _shortestPath(adj, a, open[i]);
+      if (path.isEmpty) continue;
+      if (bestPath.isEmpty || path.length < bestPath.length) {
+        bestPath = path;
+        bestI = i;
+      }
+    }
+    if (bestPath.isEmpty) break;
+    open.removeAt(bestI);
+    for (var i = 0; i + 1 < bestPath.length; i++) {
+      final u = bestPath[i];
+      final v = bestPath[i + 1];
+      remaining[u * 1000003 + v] = (remaining[u * 1000003 + v] ?? 0) + 1;
+      remaining[v * 1000003 + u] = (remaining[v * 1000003 + u] ?? 0) + 1;
+    }
+  }
+}
+
+/// [from] 에서 [to] 까지 변 수가 가장 적은 길. 못 닿으면 빈 목록.
+List<int> _shortestPath(Map<int, List<int>> adj, int from, int to) {
+  final prev = <int, int>{from: from};
+  final queue = <int>[from];
+  for (var head = 0; head < queue.length; head++) {
+    final v = queue[head];
+    if (v == to) break;
+    for (final n in adj[v] ?? const <int>[]) {
+      if (prev.containsKey(n)) continue;
+      prev[n] = v;
+      queue.add(n);
+    }
+  }
+  if (!prev.containsKey(to)) return const <int>[];
+  final out = <int>[to];
+  var cur = to;
+  while (cur != from) {
+    cur = prev[cur]!;
+    out.add(cur);
   }
   return out.reversed.toList();
 }

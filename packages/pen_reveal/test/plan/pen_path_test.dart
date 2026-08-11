@@ -182,21 +182,29 @@ const _lassoPoints = <(int, int)>[
   (80, 55),
 ];
 
-/// 결함을 재현하는 도형들 — **지금 코드에서 빨갛다.** 이게 수정의 과녁이다.
-final _adversarial = <String, Uint8List>{
-  // T자 — 위에서 내려오다 좌우로 갈린다. 갈림길에서 한쪽을 끝까지 그린 뒤 되돌아와
-  //   반대쪽을 그리면, 되돌아오는 순간 펜 끝이 반대편으로 순간이동한다.
-  'T자': () {
-    final a = _stroke(const [(80, 20), (80, 80)], 6);
-    final b = _stroke(const [(25, 80), (135, 80)], 6);
-    for (var i = 0; i < a.length; i++) {
-      if (b[i] != 0) a[i] = 255;
-    }
-    return a;
-  }(),
-  // 올가미 — 고리를 그린 뒤 꼬리로 빠진다. 고리가 자기 자신에 닿는다.
-  '올가미': _stroke(_lassoPoints, 6),
-};
+/// 올가미 — 고리를 그린 뒤 꼬리로 빠진다. **고리가 자기 자신에 닿는다.**
+///
+///   ⚠️ **정본 지도의 결함은 전부 이 모양이다.** 사장님 지도에 T 자 갈림길(길 셋이
+///   한 점에서 만나는 것)은 없다 — 한 획이 자기 자신과 나란히 붙었다 갈라질 뿐이다.
+///   얇게 깎으면 그 붙은 구간이 한 줄이 되어 양끝이 갈래 3 처럼 보인다.
+///   실측 다리 길이 special_01 24 · deep_04 45 가 "두 가닥이 그만큼 붙어 있었다" 는 증거다.
+///
+///   `_pairOddVertices` 가 그 구간을 두 번 지나게 만들면서 초록이 됐다.
+final _lasso = _stroke(_lassoPoints, 6);
+
+/// T 자 — 길 셋이 한 점에서 만난다. **지금 코드에서 빨갛다.**
+///
+///   ⚠️ **정본 지도에는 이 모양이 없다.** 그래서 이건 코퍼스의 결함 재현이 아니라
+///   패키지를 남의 그림에 쓸 때를 대비한 **남은 과녁**이다. 되짚기를 넣어 12.0 → 7.6 배로
+///   내려왔지만 기준 4 는 아직 못 넘는다 — 되짚어 돌아오는 순간 펜 끝이 반대편으로 뛴다.
+final _tee = () {
+  final a = _stroke(const [(80, 20), (80, 80)], 6);
+  final b = _stroke(const [(25, 80), (135, 80)], 6);
+  for (var i = 0; i < a.length; i++) {
+    if (b[i] != 0) a[i] = 255;
+  }
+  return a;
+}();
 
 void main() {
   group('한 붓처럼 나아간다 — 합성', () {
@@ -231,30 +239,45 @@ void main() {
     });
   });
 
+  // 올가미 — **정본 지도 결함의 최소 재현.** 되짚기를 넣기 전에는 빨갰다.
+  //
+  //   ⚠️ 이 시험이 다시 빨개지면 되짚기가 깨진 것이다. 정본 열 장이 전부 이 모양이므로,
+  //   여기가 무너지면 코퍼스도 같이 무너진다.
+  test('올가미 — 자기 자신에 닿는 고리를 한 붓으로 지난다', () {
+    final baked = bakeOneStrokeOrder(StrokeMask(_lasso, _w, _h));
+    expect(baked.length, greaterThan(0));
+    final bins = (baked.length / 5).round().clamp(16, 160);
+    final ratio = _speedRatio(baked.bytes, bins);
+    final (count, gap) = _fronts(baked.bytes, bins);
+    expect(
+      ratio,
+      lessThanOrEqualTo(4),
+      reason: '올가미 — 한 걸음에 중앙값의 ${ratio.toStringAsFixed(1)}배를 뛰었다 '
+          '(전선 $count 덩어리 · 최대 ${gap.toStringAsFixed(0)}px 떨어짐)',
+    );
+  });
+
   // ⚠️ **여기는 지금 빨갛다. 일부러다.**
   //
-  //   T자와 올가미는 사장님이 지적한 결함의 최소 재현이다 — 갈림길에서 위로 되꺾고,
-  //   펜이 저쪽에 있는데 이쪽이 먼저 켜진다. 순회를 고치면 여기가 초록이 되어야 한다.
-  //   **초록이 되기 전에는 "고쳤다" 고 말하지 않는다.**
-  group(
-    '아직 못 고친 것 — 수정의 과녁',
+  //   길 셋이 한 점에서 만나는 진짜 T 자다. 되짚기가 12.0 → 7.6 배로 낮췄지만 아직 4 를
+  //   못 넘는다 — 한쪽 가지를 끝까지 그리고 되짚어 돌아오는 순간 펜 끝이 반대편으로 뛴다.
+  //   **정본 지도에는 이 모양이 없으므로** 사장님 그림에는 영향이 없다. 남의 그림에 이
+  //   패키지를 쓸 때를 위한 과녁이다.
+  test(
+    'T자 — 펜 끝이 순간이동하지 않는다',
     () {
-      _adversarial.forEach((name, mask) {
-        test('$name — 펜 끝이 순간이동하지 않는다', () {
-          final baked = bakeOneStrokeOrder(StrokeMask(mask, _w, _h));
-          expect(baked.length, greaterThan(0));
-          final bins = (baked.length / 5).round().clamp(16, 160);
-          final ratio = _speedRatio(baked.bytes, bins);
-          final (count, gap) = _fronts(baked.bytes, bins);
-          expect(
-            ratio,
-            lessThanOrEqualTo(4),
-            reason: '$name — 한 걸음에 중앙값의 ${ratio.toStringAsFixed(1)}배를 뛰었다 '
-                '(전선 $count 덩어리 · 최대 ${gap.toStringAsFixed(0)}px 떨어짐)',
-          );
-        });
-      });
+      final baked = bakeOneStrokeOrder(StrokeMask(_tee, _w, _h));
+      expect(baked.length, greaterThan(0));
+      final bins = (baked.length / 5).round().clamp(16, 160);
+      final ratio = _speedRatio(baked.bytes, bins);
+      final (count, gap) = _fronts(baked.bytes, bins);
+      expect(
+        ratio,
+        lessThanOrEqualTo(4),
+        reason: 'T자 — 한 걸음에 중앙값의 ${ratio.toStringAsFixed(1)}배를 뛰었다 '
+            '(전선 $count 덩어리 · 최대 ${gap.toStringAsFixed(0)}px 떨어짐)',
+      );
     },
-    skip: '순회를 고치기 전까지 빨갛다 — 고치면 이 skip 을 지운다',
+    skip: '길 셋이 한 점에서 만나는 T 자는 아직 못 고쳤다 — 정본 지도에는 없는 모양이다',
   );
 }

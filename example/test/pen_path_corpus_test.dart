@@ -72,6 +72,37 @@ const _backTurn = -0.5;
 ///
 ///   나머지 값은 지금 그대로 못 박아 둔다. 0 인 지도(basic 셋·deep_01)는 곧은 길이라
 ///   뒤집힘이 아예 없어야 하고, 나머지는 하트·고리를 도는 정상적인 꺾임이다.
+/// 지도별 **한 걸음 상한**(px) — 붓끝이 이보다 크게 뛰면 순간이동이다.
+///
+///   길 픽셀을 시각 순으로 60 칸에 세웠으니 한 칸은 길이의 1/60 이다. 고른 걸음이면
+///   9~15px 이다. 이보다 크게 뛰면 그 사이가 **시각 없이 건너뛴 것**이다.
+///   실측(굽기 420) — 성한 일곱 장은 5~16px 로 고르다:
+///
+///       basic_01 6.7 · basic_02 10.6 · basic_03 5.5 · deep_01 8.2
+///       deep_02 13.9 · deep_06 13.9 · special_01 15.6
+///
+///   ⚠️ **그런데 세 장이 튄다. 이게 결함이다.**
+///
+///       deep_03 42.2 · deep_04 41.0 · deep_05 31.3
+///
+///   원인은 되짚기다. 되짚는 구간은 이미 칠해져 있어 시각을 다시 안 받으므로
+///   (`t.putIfAbsent`), 시각 순으로 늘어놓으면 그 구간이 통째로 빠진다. 그래서 앞뒤가
+///   공간적으로 뚝 떨어진다 — 화면에서 붓끝이 사라졌다 다른 데서 나타난다.
+///
+///   지금 값으로 못 박아 둔다. **고치면 이 셋을 20 이하로 내리고 이 문구를 지운다.**
+const _hopBudget = <String, int>{
+  'map_basic_01': 20,
+  'map_basic_02': 20,
+  'map_basic_03': 20,
+  'map_deep_01': 20,
+  'map_deep_02': 20,
+  'map_deep_03': 43,
+  'map_deep_04': 42,
+  'map_deep_05': 32,
+  'map_deep_06': 20,
+  'map_special_01': 20,
+};
+
 const _backBudget = <String, int>{
   'map_basic_01': 0,
   'map_basic_02': 0,
@@ -193,6 +224,28 @@ void main() {
             if (la < 1 || lb < 1) continue;
             if ((ax * bx + ay * by) / (la * lb) < _backTurn) back++;
           }
+          // 붓끝이 한 걸음에 얼마나 뛰나 — **순간이동**을 잡는다.
+          //
+          //   ⚠️ 되돌아감 지표로는 이걸 못 잡는다. 되짚는 구간은 이미 칠해져 있어서
+          //   시각을 다시 안 받는다(`t.putIfAbsent`). 그래서 **시각 순으로 늘어놓으면
+          //   되짚기 구간이 통째로 빠지고**, 그 앞뒤가 공간적으로 뚝 떨어진다 —
+          //   화면에서는 붓끝이 사라졌다 다른 데서 나타난다.
+          //   (실측: map_deep_04 41px)
+          var hop = 0.0;
+          for (var i = 1; i < tips.length; i++) {
+            final hx = tips[i].$1 - tips[i - 1].$1;
+            final hy = tips[i].$2 - tips[i - 1].$2;
+            final d = math.sqrt(hx * hx + hy * hy);
+            if (d > hop) hop = d;
+          }
+          final hopBudget = _hopBudget[key];
+          if (hopBudget != null && hop > hopBudget) {
+            drift.add(
+              '$key 붓끝이 한 걸음에 ${hop.toStringAsFixed(0)}px 뛰었다 '
+              '(상한 $hopBudget)',
+            );
+          }
+
           final budget = _backBudget[key];
           if (budget != null && back > budget) {
             drift.add('$key 펜이 이미 지난 자리로 $back 번 되돌아왔다 (상한 $budget)');

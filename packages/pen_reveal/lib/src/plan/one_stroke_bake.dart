@@ -847,6 +847,7 @@ class StrokeGraphShape {
     required this.oddDegree,
     required this.endpoints,
     this.degrees = const {},
+    this.bridges = const [],
   });
 
   /// 가지치기 뒤 살아남은 뼈대 픽셀 수.
@@ -867,13 +868,20 @@ class StrokeGraphShape {
   /// 차수별 개수 — 3 은 T 갈림길, 4 는 X 교차다.
   final Map<int, int> degrees;
 
+  /// 갈래 3 인 점끼리 이어진 **다리** 의 길이들(변 개수, 오름차순).
+  ///
+  ///   굵은 획이 겹친 자리를 얇게 깎으면 교차점이 한 점이 아니라 짧은 다리가 되고,
+  ///   그 양끝이 각각 갈래 3 이 된다 — 원래 X 하나였는데 T 둘로 읽힌다.
+  ///   다리가 짧으면 "이건 한 교차점이었다" 는 증거다.
+  final List<int> bridges;
+
   /// 되짚기 없이 한 붓으로 그릴 수 있나.
   bool get eulerian => components == 1 && (oddDegree == 0 || oddDegree == 2);
 
   @override
   String toString() => '정점 $vertices · 간선 $edges · 요소 $components · '
       '홀수차수 $oddDegree · 끝점 $endpoints · '
-      '${eulerian ? "한 붓 가능" : "한 붓 불가"} · 차수분포 $degrees';
+      '${eulerian ? "한 붓 가능" : "한 붓 불가"} · 차수분포 $degrees · 다리 $bridges';
 }
 
 /// [mask] 의 뼈대 그래프를 재기만 한다 — 굽지 않는다.
@@ -969,7 +977,45 @@ StrokeGraphShape measureStrokeGraph(
     oddDegree: odd,
     endpoints: ends,
     degrees: degrees,
+    bridges: _bridgeLengths(adj),
   );
+}
+
+/// 갈래 3 인 점에서 출발해 **다른 갈래 3 인 점**에 닿을 때까지의 변 개수.
+///
+///   중간이 전부 갈래 2 여야 한다(곧은 구간). 짧을수록 "원래 한 교차점" 이라는 뜻이다.
+List<int> _bridgeLengths(Map<int, List<int>> adj) {
+  final junctions = <int>[
+    for (final e in adj.entries)
+      if (e.value.length >= 3) e.key,
+  ];
+  final out = <int>[];
+  final seen = <int>{};
+  for (final j in junctions) {
+    for (final first in adj[j]!) {
+      var prev = j;
+      var cur = first;
+      var steps = 1;
+      while (steps < 200) {
+        final d = adj[cur]?.length ?? 0;
+        if (d >= 3) {
+          final a = j <= cur ? j : cur;
+          final b = j <= cur ? cur : j;
+          final key = a * 1000003 + b + steps * 1000000007;
+          if (seen.add(key)) out.add(steps);
+          break;
+        }
+        if (d != 2) break;
+        final nxt = adj[cur]!.firstWhere((n) => n != prev, orElse: () => -1);
+        if (nxt < 0) break;
+        prev = cur;
+        cur = nxt;
+        steps++;
+      }
+    }
+  }
+  out.sort();
+  return out;
 }
 
 /// 뼈대의 시각을 길 픽셀 전체로 — **가장 가까운** 뼈대의 값을 받는다.

@@ -54,7 +54,7 @@ const _golden = <String, (String, String, String, String, int)>{
   'map_deep_02@840': ('d70c2e42', 'ee6f1495', 'd218abaf', '6132797d', 4125),
   'map_deep_03@210': ('25d600c8', '19a3f1a9', 'e24d9110', '05f33e7b', 2880),
   'map_deep_03@420': ('7211cb47', '4fc6bb2c', 'ca6f47b5', '7ddfbd0d', 3198),
-  'map_deep_03@840': ('813bae83', '84409a13', '298738e1', '31680b95', 3655),
+  'map_deep_03@840': ('813bae83', '96e84dbc', 'c7800b52', '31680b95', 3655),
   'map_deep_04@210': ('6273fb88', '166a44b4', '4c39283e', 'ca8438ec', 3032),
   'map_deep_04@420': ('9b8b6965', 'd25f9a7f', '3b068e50', 'e3deca0d', 3149),
   'map_deep_04@840': ('490449da', 'c72741da', 'f8b2b6fe', '312aebb7', 3384),
@@ -65,8 +65,8 @@ const _golden = <String, (String, String, String, String, int)>{
   'map_deep_06@420': ('5d4fafd0', '4a7c893a', '552f8800', '194cc93d', 3529),
   'map_deep_06@840': ('e1ee5ef9', 'db4416d5', '2ddd7ae2', 'b5355e11', 4125),
   'map_special_01@210': ('56a4f40e', 'e9a05dfd', '721a4899', '739fabf0', 3097),
-  'map_special_01@420': ('b9f8d307', 'da4279ec', '24e418ff', '43b608a5', 3460),
-  'map_special_01@840': ('702b0c04', '405792f9', '83f91bdf', '19532a80', 3911),
+  'map_special_01@420': ('b9f8d307', 'f72f14ba', 'f7b30ccc', '46f61f22', 3392),
+  'map_special_01@840': ('702b0c04', '5d65ac39', '39699507', '46512c9e', 3858),
 };
 
 /// FNV-1a **32비트** — 짧고 의존성이 없다. 암호학적 용도가 아니라 회귀 감지용이라

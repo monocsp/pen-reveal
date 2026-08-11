@@ -414,15 +414,13 @@ Map<int, double>? _oneStrokeOrder(
   _pruneSpurs(adj, (width * kSpurWidths).round().clamp(6, 1 << 30));
   if (adj.isEmpty) return null;
 
+  // ⚠️ **쪼개진 교차점을 도로 한 점으로 붙인다.** 이걸 먼저 해야 짝이 맞는다.
+  //   자세한 이유는 [_mergeSplitCrossings] 주석에 있다.
+  final merged = _mergeSplitCrossings(adj, w, width);
+
   final t = <int, double>{};
-  // ⚠️ **변마다 "몇 번 더 지날 수 있나" 를 센다.** `adj` 는 누가 이어져 있는지만 말하고,
-  //   같은 변을 두 번 지나야 하는지는 여기가 말한다.
-  //
-  //   왜 두 번 지나나: 그림에 T 자 갈림길은 없다. **선이 자기 자신과 나란히 붙었다
-  //   갈라지는** 자리가 있을 뿐이다. 얇게 깎으면 그 붙은 구간이 한 줄이 되어 양끝이
-  //   갈래 3 처럼 보인다 — 실측 다리 길이 special_01 24 · deep_04 45 는 "두 가닥이
-  //   그만큼 나란히 붙어 있었다" 는 뜻이다. 원래 가닥이 둘이니 펜이 두 번 지나는 것이
-  //   맞고, 그러면 양끝이 갈래 4 가 되어 짝이 맞는다.
+  // 변마다 "몇 번 더 지날 수 있나" 를 센다. 붙이고도 홀수가 남으면 [_pairOddVertices]
+  //   가 그 사이를 두 번 지나게 채운다.
   final remaining = <int, int>{};
   for (final e in adj.entries) {
     for (final n in e.value) {
@@ -463,7 +461,7 @@ Map<int, double>? _oneStrokeOrder(
     //   예전엔 DFS 가 내려가면서 첫 방문에 찍었다. 그러면 가지 하나를 끝까지 그리고
     //   갈림길로 되돌아온 순간 다음 가지가 시작되어, 화면에서 붓끝이 **순간이동**한다.
     //   걷기의 이웃한 두 점은 언제나 8-이웃이라 그럴 수가 없다.
-    final route = _eulerRoute(adj, start, remaining, w);
+    final route = _expandMerged(_eulerRoute(adj, start, remaining, w), merged);
     for (var i = 0; i < route.length; i++) {
       final v = route[i];
       if (i > 0) {
@@ -557,6 +555,285 @@ List<int> _eulerRoute(
     stack.add(nxt);
   }
   return out.reversed.toList();
+}
+
+/// 붙였던 교차점을 경로에서 **도로 펼친다.**
+///
+///   순회는 붙인 그래프에서 돌았으므로 대표 자리 [_MergedCrossing.a] 만 나온다. 그런데
+///   그 자리를 드나드는 팔 중 일부는 실제로는 반대쪽 끝 `b` 에 붙어 있었다. 그대로 두면
+///   펜이 a 와 b 사이를 순간이동한다.
+///
+///   앞뒤 팔이 어느 쪽인지 보고 되돌린다:
+///     · 둘 다 a 쪽  → a 에 있는다
+///     · 둘 다 b 쪽  → b 에 있는다
+///     · 서로 다르면 → **다리를 실제로 걸어간다** (그 픽셀들이 시각을 받는다)
+///
+///   ⚠️ **정직하게 적는다: 지금 정본 열 장과 합성 도형 어느 것도 이 함수를 실제로
+///   쓰지 않는다.** 이 함수를 통째로 무력화하는 뮤테이션을 넣어도 모든 관문이 초록이다.
+///   지금 붙는 자리(map_special_01)에서는 펜이 a 쪽으로 들어와 a 쪽으로 나가고, 나중에
+///   b 쪽으로 들어와 b 쪽으로 나가서 **양쪽을 가로지르는 일이 없기 때문**이다.
+///   그래서 이건 증명된 코드가 아니라 **막아 두는 코드**다 — 가로지르는 그림이 들어오면
+///   그때 물린다. 그런 그림을 합성으로 만들 수 있으면 시험을 붙이고 이 문구를 지운다.
+List<int> _expandMerged(List<int> route, Map<int, _MergedCrossing> merged) {
+  if (merged.isEmpty) return route;
+  final out = <int>[];
+  for (var i = 0; i < route.length; i++) {
+    final v = route[i];
+    final m = merged[v];
+    if (m == null) {
+      out.add(v);
+      continue;
+    }
+    final before = i > 0 ? route[i - 1] : -1;
+    final after = i + 1 < route.length ? route[i + 1] : -1;
+    final fromB = m.bSide.contains(before);
+    final toB = m.bSide.contains(after);
+    if (before < 0) {
+      out.add(toB ? m.b : m.a);
+    } else if (after < 0) {
+      out.add(fromB ? m.b : m.a);
+    } else if (fromB == toB) {
+      out.add(fromB ? m.b : m.a);
+    } else if (fromB) {
+      out.addAll(m.bridge.reversed);
+    } else {
+      out.addAll(m.bridge);
+    }
+  }
+  return out;
+}
+
+/// 세선화가 쪼개 놓은 교차점을 **도로 한 점으로 붙인다.**
+///
+///   ⚠️ **왜 필요한가.** 매끄러운 도형의 중심축에서 정상적인 갈림점은 **갈래 3 뿐**이다.
+///   갈래 4 는 네 경계점의 거리가 동시에 딱 맞아야 하는 사건이라, 픽셀화 오차만 있어도
+///   **갈래 3 둘 + 짧은 가지**로 풀린다. 세선화는 굵은 영역의 위상(구멍 개수)만 보존할 뿐
+///   "두 획이 한 점에서 만났다" 는 것은 보존하지 않는다. 그러니 밖에서 되돌려 줘야 한다.
+///   문헌에서 부르는 이름: **X-junction splitting** · spurious bifurcation ·
+///   "non-generic fourfold junction 이 generic triple junction 둘로 풀림".
+///
+///   되돌리는 연산의 이름은 그래프 이론의 **변 수축(edge contraction)** 이다. 갈래 3 인
+///   두 점을 잇는 변을 수축하면 갈래 4 인 점 하나가 된다.
+///
+///   실측 map_special_01: A(168,146) 과 B(155,165) 사이 24 변. 붙이면 팔이 넷이 된다 —
+///   위에서 내려온 길 · 하트 위 · 하트 아래 · X 로 가는 꼬리. 홀수 자리가 넷에서 둘로
+///   줄어 복제 없이 한 붓이 된다.
+///
+///   ⚠️ **아무 다리나 붙이지 않는다.** 진짜로 갈래 3 이 둘 있는 그림도 있다. 그래서
+///   바깥 팔 넷의 **접선**을 재서, 거의 마주보는 짝이 둘로 갈리는지 본다(§[_looksLikeCrossing]).
+///
+///   ⚠️ 다리 속 픽셀은 순회에서 빠진다. 지금은 `_spread` 가 가장 가까운 시각으로 메운다 —
+///   24px 짜리라 관문 안에 들어온다(선단 계단 예산 그대로 초록). 더 긴 다리를 붙이게 되면
+///   여기서 시각을 명시적으로 나눠 줘야 한다.
+/// 붙인 교차점 하나 — 대표 자리 [a], 반대쪽 끝 [b], 그 사이 다리, 그리고 **어느 팔이
+/// b 쪽에 붙어 있었는지**.
+///
+///   ⚠️ b 쪽 팔을 그냥 a 로 옮기면 순회는 맞지만 **펜이 24px 순간이동**한다. b 쪽으로
+///   드나들 때는 펜이 실제로는 b 에 있으므로, 경로를 되펼 때 그 자리를 돌려줘야 한다.
+class _MergedCrossing {
+  _MergedCrossing(this.a, this.b, this.bridge);
+
+  final int a;
+  final int b;
+
+  /// a 에서 b 까지의 자리들(양끝 포함).
+  final List<int> bridge;
+
+  /// b 쪽에 붙어 있던 팔의 첫 자리들.
+  final Set<int> bSide = <int>{};
+}
+
+Map<int, _MergedCrossing> _mergeSplitCrossings(
+  Map<int, List<int>> adj,
+  int w,
+  double width,
+) {
+  final merged = <int, _MergedCrossing>{};
+  // 굵기의 몇 배까지를 "굵기가 만든 흔적" 으로 볼 것인가. 얕은 각도로 만나면 겹치는
+  //   길이가 굵기/sin(각) 로 커지므로 넉넉히 잡고, 진짜 판정은 접선에 맡긴다.
+  final maxLen = (width * _mergeWidths).round();
+  if (maxLen < 2) return merged;
+  for (var pass = 0; pass < 8; pass++) {
+    final found = _findJunctionBridge(adj, maxLen);
+    if (found == null) return merged;
+    final a = found.first;
+    final b = found.last;
+    if (!_looksLikeCrossing(adj, found, w, width)) {
+      // 진짜 갈래 3 둘이다 — 손대지 않는다. 더 볼 다리가 있어도 여기서 멈춘다.
+      return merged;
+    }
+    final cross = _MergedCrossing(a, b, found);
+    // ① b 의 바깥 팔을 a 로 옮긴다.
+    final bOuter = <int>[
+      for (final n in adj[b]!)
+        if (n != found[found.length - 2]) n,
+    ];
+    for (final n in bOuter) {
+      adj[n]!
+        ..remove(b)
+        ..add(a);
+      adj[a]!.add(n);
+      cross.bSide.add(n);
+    }
+    // ② 다리 속과 b 를 그래프에서 뺀다 — 픽셀은 a 가 떠안는다.
+    adj[a]!.remove(found[1]);
+    adj[found[1]]?.remove(a);
+    for (var i = 1; i < found.length; i++) {
+      adj.remove(found[i]);
+    }
+    merged[a] = cross;
+    debugRouteSink?.call(
+      '교차점 붙임 (${a % w},${a ~/ w}) ← (${b % w},${b ~/ w}) '
+      '다리 ${found.length - 1} · 갈래 ${adj[a]!.length}',
+    );
+  }
+  return merged;
+}
+
+/// 다리 길이를 굵기의 몇 배까지 후보로 볼 것인가.
+///
+///   ⚠️ 이 값은 **후보를 넓게 잡기 위한 것**이지 판정이 아니다. 판정은 접선이 한다.
+///   실측(굽기 420): 굵기 ~12, map_special_01 다리 24 = 2.0 배 · map_deep_04 45 = 3.6 배.
+const int _mergeWidths = 6;
+
+/// 갈래 3 이상인 두 자리를 잇는, 속이 전부 갈래 2 인 가장 짧은 길. 없으면 null.
+List<int>? _findJunctionBridge(Map<int, List<int>> adj, int maxLen) {
+  List<int>? best;
+  for (final e in adj.entries) {
+    if (e.value.length < 3) continue;
+    for (final first in e.value) {
+      final path = <int>[e.key, first];
+      var prev = e.key;
+      var cur = first;
+      while (path.length - 1 <= maxLen) {
+        final d = adj[cur]?.length ?? 0;
+        if (d >= 3) {
+          if (cur != e.key && (best == null || path.length < best.length)) {
+            best = [...path];
+          }
+          break;
+        }
+        if (d != 2) break;
+        final nxt = adj[cur]!.firstWhere((n) => n != prev, orElse: () => -1);
+        if (nxt < 0) break;
+        prev = cur;
+        cur = nxt;
+        path.add(cur);
+      }
+    }
+  }
+  return best;
+}
+
+/// 이 다리가 **원래 교차점 하나**였나 — 바깥 팔 넷의 접선으로 가른다.
+///
+///   다리를 뺀 바깥 팔은 넷이다(양끝에서 둘씩). 이 넷을 둘씩 짝짓는 방법은 세 가지고,
+///   짝마다 두 접선이 얼마나 **마주보는지**를 본다. 마주볼수록 "원래 한 곡선" 이다.
+///
+///       비용(짝짓기) = Σ (1 − |접선ᵢ · 접선ⱼ|)
+///
+///   ⚠️ 이긴 짝짓기가 **양끝을 가로질러야** 교차점이다. a 의 두 팔끼리 짝지어지면 그건
+///   곧은 선에 가지 하나가 붙은 것 — 진짜 갈래 3 이다.
+bool _looksLikeCrossing(
+  Map<int, List<int>> adj,
+  List<int> bridge,
+  int w,
+  double width,
+) {
+  final a = bridge.first;
+  final b = bridge.last;
+  final reach = width.round().clamp(4, 24);
+  final arms = <(double, double)>[];
+  final side = <int>[];
+  for (final (node, inner) in <(int, int)>[
+    (a, bridge[1]),
+    (b, bridge[bridge.length - 2]),
+  ]) {
+    for (final n in adj[node]!) {
+      if (n == inner) continue;
+      final dir = _armDirection(adj, node, n, reach, w);
+      if (dir == null) return false;
+      arms.add(dir);
+      side.add(node == a ? 0 : 1);
+    }
+  }
+  if (arms.length != 4) return false;
+  const pairings = <List<int>>[
+    [0, 1, 2, 3],
+    [0, 2, 1, 3],
+    [0, 3, 1, 2],
+  ];
+  var bestCost = double.infinity;
+  List<int>? bestPair;
+  for (final p in pairings) {
+    final c = (1 - _absDot(arms[p[0]], arms[p[1]])) +
+        (1 - _absDot(arms[p[2]], arms[p[3]]));
+    if (c < bestCost) {
+      bestCost = c;
+      bestPair = p;
+    }
+  }
+  final p = bestPair!;
+  debugRouteSink?.call(
+    '교차 판정 짝 ${p.join(",")} · 마주봄 '
+    '${_absDot(arms[p[0]], arms[p[1]]).toStringAsFixed(2)}/'
+    '${_absDot(arms[p[2]], arms[p[3]]).toStringAsFixed(2)} · 쪽 ${side.join()}',
+  );
+  // 실측(굽기 420): map_special_01 1.00/1.00 → 붙임 · map_deep_04 0.78/0.93 →
+  //   안 붙임 · map_deep_05 0.84/0.99 → 안 붙임. 이 문턱을 없애면 deep_04 를 잘못
+  //   붙여 선단 계단이 20 > 11 로 터진다.
+  final crosses = side[p[0]] != side[p[1]] && side[p[2]] != side[p[3]];
+  final straight = _absDot(arms[p[0]], arms[p[1]]) >= _kCrossCollinear &&
+      _absDot(arms[p[2]], arms[p[3]]) >= _kCrossCollinear;
+  return crosses && straight;
+}
+
+/// 짝지은 두 팔이 이만큼은 마주봐야 "원래 한 곡선" 으로 본다(코사인 절댓값).
+///
+///   1.0 이 완전한 일직선이다. **0.99 는 일부러 빡빡하다.** 실측(굽기 420):
+///
+///       map_special_01  1.00 / 1.00   → 붙인다
+///       map_deep_03     0.95 / 1.00   → 안 붙인다
+///       map_deep_05     0.84 / 0.99   → 안 붙인다
+///       map_deep_04     0.78 / 0.93   → 안 붙인다
+///
+///   합성 도형 '가로지르는 교차' 는 0.99 다.
+///
+///   ⚠️ **0.95 인 map_deep_03 을 왜 빼는가.** 기하만 보면 붙이는 게 맞다. 그런데 붙이면
+///   경로가 35·42·33px **순간이동**한다 — [_expandMerged] 가 그 모양의 드나듦을 아직
+///   못 다룬다(`pen_tip_corpus_test` 가 한 프레임 76px > 70 으로 잡는다). 원인을 잡기
+///   전까지는 **증거가 확실한 것만** 붙인다. 고치고 나면 이 값을 0.9 근처로 내리고
+///   여기를 다시 쓴다.
+const double _kCrossCollinear = 0.98;
+
+/// [from] 에서 [first] 쪽으로 [reach] 만큼 걸어가 얻은 방향(바깥쪽을 향한 단위 벡터).
+(double, double)? _armDirection(
+  Map<int, List<int>> adj,
+  int from,
+  int first,
+  int reach,
+  int w,
+) {
+  var prev = from;
+  var cur = first;
+  for (var i = 1; i < reach; i++) {
+    final ns = adj[cur];
+    if (ns == null || ns.length != 2) break;
+    final nxt = ns.firstWhere((n) => n != prev, orElse: () => -1);
+    if (nxt < 0) break;
+    prev = cur;
+    cur = nxt;
+  }
+  final dx = (cur % w - from % w).toDouble();
+  final dy = (cur ~/ w - from ~/ w).toDouble();
+  final len = math.sqrt(dx * dx + dy * dy);
+  if (len < 1) return null;
+  return (dx / len, dy / len);
+}
+
+double _absDot((double, double) p, (double, double) q) {
+  final d = p.$1 * q.$1 + p.$2 * q.$2;
+  return d < 0 ? -d : d;
 }
 
 /// 진단용 — 순회가 무엇을 정했는지 흘려보낸다. 평소엔 null 이라 아무 비용도 없다.

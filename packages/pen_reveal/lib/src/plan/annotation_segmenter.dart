@@ -136,7 +136,10 @@ List<AnnotationChunk> segmentAnnotation({
   for (var line = 0; line < lines.length; line++) {
     final row = lines[line]..sort((a, b) => a.left.compareTo(b.left));
     final syllables = config.expectedSyllableCount;
-    if (syllables != null && syllables > 1 && row.length > 1) {
+    // ⚠️ 예전엔 `row.length > 1` 도 요구했다. 그러면 **줄이 통째로 한 연결요소일 때**
+    //   — 즉 자모가 다 붙어 갈라야 할 이유가 가장 큰 경우 — 힌트를 줘도 안 갈렸다.
+    //   조각 개수가 아니라 "몇 음절로 갈라 달라고 했나" 로만 판단한다.
+    if (syllables != null && syllables > 1) {
       out.addAll(_asSyllables(row, line, syllables, width, height, config));
       continue;
     }

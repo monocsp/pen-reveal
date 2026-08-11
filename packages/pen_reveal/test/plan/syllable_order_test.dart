@@ -129,14 +129,30 @@ void main() {
   });
 
   group('힌트가 무의미하면 조용히 기존 동작으로', () {
-    test('덩어리가 하나뿐이면 안 가른다', () {
+    // ⚠️ **예전엔 "덩어리가 하나뿐이면 안 가른다" 를 잠그고 있었다.** 그건 구현의
+    //   `row.length > 1` 조건을 그대로 옮겨 적은 것인데, 하필 **갈라야 할 이유가 가장 큰
+    //   경우**를 막고 있었다 — 줄이 통째로 한 연결요소면 연결요소만으로는 음절이 절대
+    //   안 나뉜다. 실제로 정본 map_deep_06 에서 "견한" 이 한 덩어리(폭 50px, 다른
+    //   덩어리의 두 배)로 남아 **두 음절이 동시에 떴다.**
+    //
+    //   힌트를 준 쪽은 "이 줄을 n 음절로 갈라 달라" 고 말한 것이다. 조각이 몇 개인지는
+    //   그 요청과 무관하다.
+    test('덩어리가 하나뿐이어도 힌트대로 가른다', () {
       final chunks = segmentAnnotation(
         pixels: Int32List.fromList(_box(4, 4, 9, 18)),
         width: _w,
         height: _h,
         config: const AnnotationSegmenterConfig(expectedSyllableCount: 4),
       );
-      expect(chunks.length, 1);
+      expect(chunks.length, 4, reason: '한 덩어리라고 힌트를 무시하면 안 된다');
+      // 갈린 조각은 왼쪽부터 차례로 놓인다.
+      for (var i = 1; i < chunks.length; i++) {
+        expect(
+          chunks[i].left,
+          greaterThanOrEqualTo(chunks[i - 1].left),
+          reason: '음절이 좌→우 순서가 아니다',
+        );
+      }
     });
 
     test('힌트가 1 이면 안 가른다', () {

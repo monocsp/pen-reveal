@@ -846,6 +846,7 @@ class StrokeGraphShape {
     required this.components,
     required this.oddDegree,
     required this.endpoints,
+    this.degrees = const {},
   });
 
   /// 가지치기 뒤 살아남은 뼈대 픽셀 수.
@@ -863,13 +864,16 @@ class StrokeGraphShape {
   /// 차수 1 인 정점 수 — 획의 자연스러운 시작·끝 후보다.
   final int endpoints;
 
+  /// 차수별 개수 — 3 은 T 갈림길, 4 는 X 교차다.
+  final Map<int, int> degrees;
+
   /// 되짚기 없이 한 붓으로 그릴 수 있나.
   bool get eulerian => components == 1 && (oddDegree == 0 || oddDegree == 2);
 
   @override
   String toString() => '정점 $vertices · 간선 $edges · 요소 $components · '
       '홀수차수 $oddDegree · 끝점 $endpoints · '
-      '${eulerian ? "한 붓 가능" : "한 붓 불가"}';
+      '${eulerian ? "한 붓 가능" : "한 붓 불가"} · 차수분포 $degrees';
 }
 
 /// [mask] 의 뼈대 그래프를 재기만 한다 — 굽지 않는다.
@@ -934,9 +938,11 @@ StrokeGraphShape measureStrokeGraph(
   var edges = 0;
   var odd = 0;
   var ends = 0;
+  final degrees = <int, int>{};
   for (final entry in adj.entries) {
     final d = entry.value.length;
     edges += d;
+    degrees[d] = (degrees[d] ?? 0) + 1;
     if (d.isOdd) odd++;
     if (d == 1) ends++;
   }
@@ -962,6 +968,7 @@ StrokeGraphShape measureStrokeGraph(
     components: components,
     oddDegree: odd,
     endpoints: ends,
+    degrees: degrees,
   );
 }
 

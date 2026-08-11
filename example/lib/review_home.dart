@@ -4,8 +4,9 @@
 //   Navigation → 트리 펼치기 → use case 고르기 → Knobs 탭으로 네 번을 건너야 한다.
 //   "이거 확인해 주세요" 하고 건네는 물건으로는 못 쓴다.
 //
-//   그래서 판단에 필요한 것만 한 화면에 둔다 — 지도 고르기 · 재생 · 진행도 · 그리고
-//   **지금 판단해야 하는 값인 가파르기 k** 를 손에 닿는 자리에.
+//   ⚠️ **아래에 고정하는 것은 재생 버튼 하나다.** 처음엔 조절 손잡이를 아래에 깔았는데,
+//   그러면 정작 재생을 하려고 스크롤을 해야 한다 — 가장 자주 누르는 것이 가장 멀었다.
+//   조절값은 시트로 뺀다.
 //
 //   위젯북은 없애지 않는다. 합성 도형·경계 조건처럼 개발 중에만 보는 것들이 거기 있고,
 //   그건 여기 있을 이유가 없다. 오른쪽 위 버튼으로 넘어간다.
@@ -14,7 +15,7 @@ import 'package:pen_reveal_example/fixtures/corpus_maps.dart';
 import 'package:pen_reveal_example/reveal_bench.dart';
 import 'package:pen_reveal_flutter/pen_reveal_flutter.dart';
 
-/// 정본 지도를 보며 가파르기를 정하는 화면.
+/// 정본 지도를 보며 연출을 맞추는 화면.
 class ReviewHome extends StatefulWidget {
   const ReviewHome({required this.onOpenWorkbench, super.key});
 
@@ -28,8 +29,21 @@ class ReviewHome extends StatefulWidget {
 class _ReviewHomeState extends State<ReviewHome> {
   List<String>? _keys;
   String? _selected;
+  final _play = ValueNotifier<int>(0);
+
   double _k = 24;
   var _speed = RevealSpeed.normal;
+
+  /// 정본 문구는 전부 "발견한곳" 4음절이다.
+  ///
+  ///   ⚠️ **힌트가 없으면 붙은 음절이 안 갈린다.** 자모가 이어져 한 연결요소로 남으면
+  ///   ("견한" 은 굽기 420 에서 폭 50px — 이웃 덩어리의 두 배다) 연결요소만으로는 음절을
+  ///   못 가르고, 그 덩어리가 통째로 드러나 **두 글자가 동시에 뜬다.**
+  ///
+  ///   래스터에서 음절 경계를 추정해 보려고 세로비를 재 봤지만 갈리지 않았다 — 붙은
+  ///   음절이 1.19~1.42 인데 받침 조각이 1.67~2.83 이라 구간이 겹친다. 그리는 쪽은 자기가
+  ///   쓴 글자 수를 아니까, 그 값을 받는 것이 맞다.
+  int _syllables = 4;
 
   @override
   void initState() {
@@ -42,6 +56,37 @@ class _ReviewHomeState extends State<ReviewHome> {
       });
     });
   }
+
+  @override
+  void dispose() {
+    _play.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openSettings() => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (_) => StatefulBuilder(
+          builder: (context, setSheet) => _SettingsSheet(
+            speed: _speed,
+            sharpness: _k,
+            syllables: _syllables,
+            onSpeed: (v) {
+              setSheet(() {});
+              setState(() => _speed = v);
+            },
+            onSharpness: (v) {
+              setSheet(() {});
+              setState(() => _k = v);
+            },
+            onSyllables: (v) {
+              setSheet(() {});
+              setState(() => _syllables = v);
+            },
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -61,8 +106,7 @@ class _ReviewHomeState extends State<ReviewHome> {
       ),
       body: switch ((keys, selected)) {
         (null, _) => const Center(child: CircularProgressIndicator()),
-        // 자산이 없으면 **왜 없는지와 어떻게 채우는지**를 화면에 적는다. 빈 화면을 주고
-        //   사람이 코드를 뒤지게 하지 않는다.
+        // 자산이 없으면 **왜 없는지와 어떻게 채우는지**를 화면에 적는다.
         (final List<String> k, _) when k.isEmpty => const _NoAssets(),
         (_, null) => const Center(child: CircularProgressIndicator()),
         (final List<String> all, final String key) => Column(
@@ -74,29 +118,55 @@ class _ReviewHomeState extends State<ReviewHome> {
               ),
               Expanded(
                 child: RevealBench(
-                  // 지도가 바뀌면 새로 굽는다. k 는 key 에 넣지 않는다 — 값 동등성이
-                  //   있어서 `didUpdateWidget` 이 알아서 다시 굽고, State 를 버리면
-                  //   보던 진행도가 날아간다.
-                  key: ValueKey('review-$key'),
+                  // 지도나 탐지 설정이 바뀌면 새로 굽는다. 배속·가파르기는 key 에 넣지
+                  //   않는다 — 값 동등성이 있어 `didUpdateWidget` 이 알아서 다시 굽고,
+                  //   State 를 버리면 보던 진행도가 날아간다.
+                  key: ValueKey('review-$key-$_syllables'),
                   sourceLabel: '정본 · $key',
                   source: () => loadCorpusMap(key),
+                  playSignal: _play,
                   compiler: RevealTextureCompiler(
                     sharpness: RevealSharpness(_k),
                   ),
                   timing: HandwritingRevealTiming(speed: _speed),
+                  detectConfig: RevealDetectConfig(
+                    annotation: AnnotationSegmenterConfig(
+                      expectedSyllableCount: _syllables < 2 ? null : _syllables,
+                    ),
+                  ),
                 ),
-              ),
-              _SpeedBar(
-                value: _speed,
-                onChanged: (v) => setState(() => _speed = v),
-              ),
-              _SharpnessBar(
-                value: _k,
-                onChanged: (v) => setState(() => _k = v),
               ),
             ],
           ),
       },
+      bottomNavigationBar: (keys?.isEmpty ?? true)
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => _play.value++,
+                        icon: const Icon(Icons.play_arrow_rounded),
+                        label: const Text('처음부터 재생'),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    IconButton.filledTonal(
+                      onPressed: _openSettings,
+                      icon: const Icon(Icons.tune),
+                      tooltip: '속도 · 붓끝 · 음절',
+                      padding: const EdgeInsets.all(14),
+                    ),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 }
@@ -133,41 +203,67 @@ class _MapStrip extends StatelessWidget {
       );
 }
 
-/// 단계별 배속 — 길·X·글씨를 따로 빠르게/느리게.
-///
-///   바깥에서 이 패키지를 쓸 때 쓰는 것이 그대로다 —
-///   `HandwritingRevealTiming(speed: RevealSpeed(road: 2, ...))`.
-class _SpeedBar extends StatelessWidget {
-  const _SpeedBar({required this.value, required this.onChanged});
+/// 조절값 시트 — 속도 · 붓끝 · 음절.
+class _SettingsSheet extends StatelessWidget {
+  const _SettingsSheet({
+    required this.speed,
+    required this.sharpness,
+    required this.syllables,
+    required this.onSpeed,
+    required this.onSharpness,
+    required this.onSyllables,
+  });
 
-  final RevealSpeed value;
-  final ValueChanged<RevealSpeed> onChanged;
+  final RevealSpeed speed;
+  final double sharpness;
+  final int syllables;
+  final ValueChanged<RevealSpeed> onSpeed;
+  final ValueChanged<double> onSharpness;
+  final ValueChanged<int> onSyllables;
 
   static const _steps = [0.5, 1.0, 2.0, 4.0];
+
+  /// 정본 실측 — 올리면 번짐은 줄고 선단은 딱딱해진다(맞바꿈이라 정답이 없다).
+  static const _sharpNote = <int, String>{
+    12: '두 배로 번진다',
+    24: '기본값',
+    48: '번짐 절반 · 계단이 세 배',
+    96: '번짐 1/4',
+    255: '거의 칼같이 — 선단 1코드',
+  };
+
+  String get _note {
+    var best = 24;
+    for (final k in _sharpNote.keys) {
+      if ((k - sharpness).abs() < (best - sharpness).abs()) best = k;
+    }
+    return _sharpNote[best]!;
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    Widget row(String label, double now, RevealSpeed Function(double) set) =>
+
+    Widget speedRow(
+      String label,
+      double now,
+      RevealSpeed Function(double) set,
+    ) =>
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
           child: Row(
             children: [
               SizedBox(
-                width: 44,
-                child: Text(label, style: theme.textTheme.bodySmall),
+                width: 40,
+                child: Text(label, style: theme.textTheme.bodyMedium),
               ),
-              const SizedBox(width: 4),
               for (final s in _steps)
                 Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: ChoiceChip(
-                    label: Text(
-                      '${s}x',
-                      style: const TextStyle(fontSize: 11),
-                    ),
+                    label: Text('${s}x', style: const TextStyle(fontSize: 12)),
                     selected: now == s,
-                    onSelected: (_) => onChanged(set(s)),
+                    onSelected: (_) => onSpeed(set(s)),
                     visualDensity: VisualDensity.compact,
                   ),
                 ),
@@ -175,79 +271,41 @@ class _SpeedBar extends StatelessWidget {
           ),
         );
 
-    return Material(
-      color: theme.colorScheme.surfaceContainerLow,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('단계별 속도', style: theme.textTheme.titleSmall),
-            row('길', value.road, (s) => value.copyWith(road: s)),
-            row('X', value.cross, (s) => value.copyWith(cross: s)),
-            row('글씨', value.annotation, (s) => value.copyWith(annotation: s)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 가파르기 손잡이 — **이 화면의 본론이라 맨 아래 고정이다.**
-class _SharpnessBar extends StatelessWidget {
-  const _SharpnessBar({required this.value, required this.onChanged});
-
-  final double value;
-  final ValueChanged<double> onChanged;
-
-  /// 정본 10종 실측 — 올리면 번짐은 줄고 선단은 딱딱해진다(맞바꿈이라 정답이 없다).
-  static const _measured = <int, String>{
-    12: '두 배로 번진다',
-    24: '지금 기본값',
-    32: '번짐 3/4 · 10종 중 6종은 계단 0',
-    40: '번짐 2/3',
-    48: '번짐 절반 · 계단이 세 배',
-    64: '번짐 1/3 · 계단이 여섯 배',
-  };
-
-  String get _note {
-    var best = 24;
-    for (final k in _measured.keys) {
-      if ((k - value).abs() < (best - value).abs()) best = k;
-    }
-    return _measured[best]!;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      elevation: 8,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
-        child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text('단계별 속도', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 6),
+            speedRow('길', speed.road, (s) => speed.copyWith(road: s)),
+            speedRow('X', speed.cross, (s) => speed.copyWith(cross: s)),
+            speedRow(
+              '글씨',
+              speed.annotation,
+              (s) => speed.copyWith(annotation: s),
+            ),
+            const Divider(height: 28),
             Row(
               children: [
-                Text('붓끝 번짐', style: theme.textTheme.titleSmall),
+                Text('붓끝 번짐', style: theme.textTheme.titleMedium),
                 const Spacer(),
                 Text(
-                  'k ${value.toStringAsFixed(0)} · 선단 '
-                  '${(255 / value).toStringAsFixed(1)}코드',
+                  'k ${sharpness.toStringAsFixed(0)} · 선단 '
+                  '${(255 / sharpness).toStringAsFixed(1)}코드',
                   style: theme.textTheme.bodySmall,
                 ),
               ],
             ),
             Slider(
-              value: value,
+              value: sharpness,
               min: 12,
-              max: 64,
-              divisions: 13,
-              label: value.toStringAsFixed(0),
-              onChanged: onChanged,
+              max: 255,
+              divisions: 27,
+              label: sharpness.toStringAsFixed(0),
+              onChanged: onSharpness,
             ),
             Row(
               children: [
@@ -256,6 +314,35 @@ class _SharpnessBar extends StatelessWidget {
                 Text(_note, style: theme.textTheme.bodySmall),
                 const Spacer(),
                 Text('칼같이', style: theme.textTheme.bodySmall),
+              ],
+            ),
+            const Divider(height: 28),
+            Row(
+              children: [
+                Text('문구 음절 수', style: theme.textTheme.titleMedium),
+                const Spacer(),
+                Text(
+                  syllables < 2 ? '안 가름' : '$syllables 음절',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '자모가 이어져 두 글자가 한 덩어리로 남으면 동시에 뜬다. '
+              '래스터만으로는 못 가르므로 글자 수를 알려 줘야 한다.',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final n in [0, 2, 3, 4, 5, 6])
+                  ChoiceChip(
+                    label: Text(n == 0 ? '안 가름' : '$n'),
+                    selected: syllables == n,
+                    onSelected: (_) => onSyllables(n),
+                  ),
               ],
             ),
           ],

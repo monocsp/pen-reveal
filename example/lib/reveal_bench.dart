@@ -13,6 +13,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:pen_reveal_flutter/pen_reveal_flutter.dart';
 
@@ -39,6 +40,7 @@ class RevealBench extends StatefulWidget {
     this.sourceLabel = '합성 지도',
     this.autoPlay = true,
     this.showGroundTruth = false,
+    this.playSignal,
     super.key,
   });
 
@@ -66,6 +68,13 @@ class RevealBench extends StatefulWidget {
 
   final String sourceLabel;
   final bool autoPlay;
+
+  /// 바깥에서 "처음부터 다시 재생" 을 시키는 신호.
+  ///
+  ///   값이 바뀔 때마다 되감고 재생한다. 재생 버튼을 화면 아래에 고정해 두려면 그 버튼이
+  ///   이 위젯 밖에 있어야 하는데, 컨트롤러를 통째로 넘기면 소유가 흐려진다 — 신호 하나만
+  ///   받는다.
+  final ValueListenable<int>? playSignal;
 
   /// 켜면 완성본을 옆에 나란히 둔다 — 연출이 원본을 훼손하지 않는지 눈으로 대조.
   final bool showGroundTruth;
@@ -96,6 +105,7 @@ class _RevealBenchState extends State<RevealBench>
   void initState() {
     super.initState();
     _controller.addListener(_onTick);
+    widget.playSignal?.addListener(_onPlaySignal);
     unawaited(_bake());
   }
 
@@ -107,11 +117,21 @@ class _RevealBenchState extends State<RevealBench>
   @override
   void didUpdateWidget(RevealBench old) {
     super.didUpdateWidget(old);
+    if (old.playSignal != widget.playSignal) {
+      old.playSignal?.removeListener(_onPlaySignal);
+      widget.playSignal?.addListener(_onPlaySignal);
+    }
     // ⚠️ `compiler` 도 본다 — `k` 가 순서값 상한을 정하므로 텍스처 자체가 달라진다.
     //   둘 다 값 동등성이 있어서 손잡이가 제자리로 돌아오면 다시 굽지 않는다.
     if (old.timing != widget.timing || old.compiler != widget.compiler) {
       unawaited(_bake(keepProgress: true));
     }
+  }
+
+  void _onPlaySignal() {
+    if (!mounted || _prepared == null) return;
+    _controller.value = 0;
+    _playTo(1);
   }
 
   void _onTick() {
@@ -120,6 +140,7 @@ class _RevealBenchState extends State<RevealBench>
 
   @override
   void dispose() {
+    widget.playSignal?.removeListener(_onPlaySignal);
     _controller
       ..removeListener(_onTick)
       ..dispose();

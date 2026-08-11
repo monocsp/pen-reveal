@@ -101,6 +101,27 @@ class AnnotationSegmenterConfig {
   ///   연결요소라 중심이 낮게 잡혀, 한 줄짜리 문구가 "윗줄 + 아랫줄" 로 갈린다
   ///   (실측: "발견한곳" 이 두 줄로 잘못 잡혔다). 겹침으로 봐야 받침이 제 글자와 붙는다.
   final double lineOverlapRatio;
+
+  // 값 동등성 — 없으면 호출부가 "설정이 바뀌었나" 를 못 물어서 **매 build 마다 다시
+  //   굽거나**, 그걸 피하려고 `ValueKey` 로 우회해야 한다(계측대가 그러고 있었다).
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AnnotationSegmenterConfig &&
+          other.minChunkPixels == minChunkPixels &&
+          other.orphanAttachRatio == orphanAttachRatio &&
+          other.lineOverlapRatio == lineOverlapRatio &&
+          other.expectedSyllableCount == expectedSyllableCount);
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => Object.hash(
+        minChunkPixels,
+        orphanAttachRatio,
+        lineOverlapRatio,
+        expectedSyllableCount,
+      );
 }
 
 /// [pixels] 를 읽기 순서(위 줄 먼저, 줄 안에서는 왼→오) 덩어리로 가른다.

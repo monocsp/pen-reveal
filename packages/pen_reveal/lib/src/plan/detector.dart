@@ -83,6 +83,38 @@ class RevealDetectConfig {
   final int strayInkMaxPixels;
 
   final AnnotationSegmenterConfig annotation;
+
+  // 값 동등성 — 호출부가 "설정이 바뀌었나" 를 물을 수 있어야 다시 구울지 정한다.
+  //   없으면 매 build 가 "바뀌었다" 가 되어 열 때마다 다시 굽거나, 그걸 피하려고
+  //   `ValueKey` 로 우회해야 한다.
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is RevealDetectConfig &&
+          other.differenceThreshold == differenceThreshold &&
+          other.composedAlphaThreshold == composedAlphaThreshold &&
+          other.accentRedDeltaThreshold == accentRedDeltaThreshold &&
+          other.strayInkMaxPixels == strayInkMaxPixels &&
+          other.xMaxRoadDistanceRatio == xMaxRoadDistanceRatio &&
+          other.xMinRoadDistanceDominance == xMinRoadDistanceDominance &&
+          other.xMinAreaRatio == xMinAreaRatio &&
+          other.xMaxAreaRatio == xMaxAreaRatio &&
+          other.annotation == annotation);
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => Object.hash(
+        differenceThreshold,
+        composedAlphaThreshold,
+        accentRedDeltaThreshold,
+        strayInkMaxPixels,
+        xMaxRoadDistanceRatio,
+        xMinRoadDistanceDominance,
+        xMinAreaRatio,
+        xMaxAreaRatio,
+        annotation,
+      );
 }
 
 /// 탐지 입력 — isolate 를 넘길 수 있는 최소 형태(둘 다 같은 크기의 RGBA).

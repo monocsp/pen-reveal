@@ -34,6 +34,7 @@ class PreparedReveal {
     required this.sharpness,
     required this.stages,
     required this.profile,
+    required this.segmentCount,
   });
 
   /// 픽셀값 = 드러나는 시점(0~[RevealSharpness.maxOrderValue]).
@@ -64,8 +65,42 @@ class PreparedReveal {
   /// 이 굽기가 어디에 시간을 썼나. 화면에 띄우거나 로그로 남겨 회귀를 잡는 데 쓴다.
   final RevealPrepareProfile profile;
 
+  /// 이 굽기가 찾아낸 세그먼트 수(길 + X 두 획 + 문구 덩어리들).
+  ///
+  ///   ⚠️ **탐지가 아무것도 못 찾았는지 밖에서 알 수 있는 유일한 값이다.** 0 이면 텍스처가
+  ///   통째로 "영영 안 드러남"(255)이라 진행도를 1 까지 올려도 화면은 [ui.Image] `base`
+  ///   그대로다 — 연출이 실패한 게 아니라 **아예 시작도 안 한 것처럼** 보인다.
+  ///   두 장이 사실상 같거나, 더한 그림이 반투명하거나(알파 200 미만), 바닥과 너무 비슷하면
+  ///   (채널 차 18 이하) 그렇게 된다.
+  ///
+  ///   ```dart
+  ///   if (prepared.isEmpty) {
+  ///     // 연출을 포기하고 완성본을 그냥 보여 준다.
+  ///     return Image(image: composedProvider);
+  ///   }
+  ///   ```
+  final int segmentCount;
+
+  /// 드러낼 것이 하나도 없다 — 재생해도 화면이 안 바뀐다.
+  ///
+  ///   호출부는 이때 **완성본을 그냥 띄우는 대비책**을 두는 것이 좋다. 그러지 않으면
+  ///   사용자는 빈 화면을 오래 본다.
+  bool get isEmpty => segmentCount == 0 || revealDuration == Duration.zero;
+
+  /// 실어 온 [ui.Image] 를 놓아준다.
+  ///
+  ///   ⚠️ **소유는 하나뿐이다.** 이 객체를 두 위젯이 나눠 쓰면 먼저 버리는 쪽이 텍스처를
+  ///   지워, 나머지 쪽은 그릴 때 "Cannot access a disposed image" 로 죽는다 — 원인에서
+  ///   한참 떨어진 자리에서 터진다. 다시 구웠으면 **옛 것을 반드시 버린다**(안 버리면 샌다).
+  ///
+  ///   ⚠️ 두 번 부르면 안 된다. [ui.Image.dispose] 가 그렇다.
+  ///
+  ///   ⚠️ `prepare()` 에 넘긴 `base`·`composed` 는 **여기서 안 버린다.** 그건 호출부 것이다.
   void dispose() => reveal.dispose();
 }
+
+/// 두 장의 가로세로비가 이만큼까지는 다를 수 있다 — 리샘플 반올림 여유다.
+const double _aspectTolerance = 0.01;
 
 /// 두 장 → 순서 텍스처. 값 객체라 `const` 로 두고 재사용한다.
 class RevealPreparer {
@@ -100,6 +135,21 @@ class RevealPreparer {
     final clock = Stopwatch()..start();
 
     // 굽기 해상도로 줄여 뜬다 — 원본 크기로 돌리면 몇 배 든다.
+    // ⚠️ **두 장은 같은 그림의 같은 틀이어야 한다.** 굽기 크기를 `composed` 에서만 뽑고
+    //   `base` 를 거기에 맞춰 리샘플하므로, 가로세로비가 다르면 `base` 가 늘어난 채로
+    //   빼진다 — **화면 거의 전체가 "변한 곳"** 이 되어 그럴듯하지만 완전히 틀린 순서가
+    //   나온다. 조용히 이상해지느니 여기서 막는다.
+    final baseRatio = base.width / base.height;
+    final composedRatio = composed.width / composed.height;
+    if ((baseRatio - composedRatio).abs() > _aspectTolerance) {
+      throw ArgumentError(
+        '바닥과 최종본의 가로세로비가 다르다 — '
+        'base ${base.width}x${base.height}, '
+        'composed ${composed.width}x${composed.height}. '
+        '두 장은 같은 그림에서 획만 더한 것이어야 한다.',
+      );
+    }
+
     final size = fitImageLongSide(composed, longSide);
     final composedRgba = await rgbaAt(composed, size.width, size.height);
     final baseRgba = await rgbaAt(base, size.width, size.height);
@@ -139,6 +189,7 @@ class RevealPreparer {
       // ⚠️ 상수를 다시 적지 않는다 — **구운 그 값**을 그대로 실어 보낸다.
       sharpness: compiler.sharpness,
       stages: RevealStageMarks.of(plan, schedule),
+      segmentCount: plan.segments.length,
       profile: RevealPrepareProfile(
         resample: Duration(microseconds: resampled),
         detect: Duration(microseconds: detectedAt - resampled),

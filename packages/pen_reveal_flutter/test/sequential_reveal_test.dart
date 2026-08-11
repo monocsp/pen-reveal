@@ -58,6 +58,7 @@ Future<List<List<int>>> _paint({
       revealDuration: Duration.zero,
       sharpness: sharpness,
       stages: RevealStageMarks.single,
+      segmentCount: 1,
       profile: RevealPrepareProfile.unmeasured,
     ),
     progress: progress,
@@ -90,6 +91,7 @@ void main() {
       revealDuration: Duration.zero,
       sharpness: RevealSharpness.standard,
       stages: RevealStageMarks.single,
+      segmentCount: 1,
       profile: RevealPrepareProfile.unmeasured,
     );
   });
@@ -244,6 +246,7 @@ void main() {
           revealDuration: Duration.zero,
           sharpness: RevealSharpness.standard,
           stages: RevealStageMarks.single,
+          segmentCount: 1,
           profile: RevealPrepareProfile.unmeasured,
         ),
         progress: 0.2,

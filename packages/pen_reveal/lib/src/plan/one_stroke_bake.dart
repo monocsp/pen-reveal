@@ -427,6 +427,18 @@ Map<int, double>? _oneStrokeOrder(
       remaining[e.key * 1000003 + n] = 1;
     }
   }
+  if (debugRouteSink != null) {
+    final js = <String>[
+      for (final e in adj.entries)
+        if (e.value.length >= 3)
+          '(${e.key % w},${e.key ~/ w})×${e.value.length}',
+    ];
+    final ends = <String>[
+      for (final e in adj.entries)
+        if (e.value.length == 1) '(${e.key % w},${e.key ~/ w})',
+    ];
+    debugRouteSink!('갈림 ${js.join(" ")} · 끝점 ${ends.join(" ")}');
+  }
   _pairOddVertices(adj, remaining, w);
   var cursor = 0.0;
   for (final start in _traversalStarts(adj)) {
@@ -531,6 +543,9 @@ List<int> _eulerRoute(
   }
   return out.reversed.toList();
 }
+
+/// 진단용 — 순회가 무엇을 정했는지 흘려보낸다. 평소엔 null 이라 아무 비용도 없다.
+void Function(String)? debugRouteSink;
 
 /// 짝이 안 맞는 자리끼리 이어, 그 사이를 **두 번 지나게** 한다.
 ///

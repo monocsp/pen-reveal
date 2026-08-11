@@ -735,6 +735,154 @@ Float32List _smoothField(Float32List field, Uint8List mask, int w, int h) {
 ///   시작한다는 신호다. 계단만 보고 올리면 안 되는 이유가 이것이고, 그래서 두 지표를 같이 본다.
 const int _smoothPasses = 5;
 
+/// 뼈대 그래프의 생김새 — **한 붓이 가능한 모양인가**를 답한다.
+///
+///   순회를 고치기 전에 반드시 재야 하는 값이다. 오일러 경로는 **연결 요소가 하나이고
+///   홀수 차수 정점이 0 개 또는 2 개일 때만** 존재한다. 그보다 많으면 되짚기 없이는
+///   한 붓으로 못 그린다 — 갈래 선택을 아무리 잘 골라도 안 되고, 그걸 모르고 고치다
+///   두 번 헛발질했다(각도 선택 · 되짚기 시계).
+///
+///   ## 재 보니 그래프가 오염돼 있었다
+///
+///   정본 10종 실측(굽기 420, 길 세그먼트):
+///
+///       그대로            홀수차수 30~222 · 끝점 0~1 · 한 붓 가능 0/10
+///       대각 지름길 제거   홀수차수  2~  8 · 끝점 2   · 한 붓 가능 6/10
+///
+///   8-연결 뼈대는 대각선이 직교 두 변과 **작은 삼각형**을 닫는다. 그 지름길들이
+///   차수를 부풀려 정점 151 개에 간선 180 개(평균 차수 2.38)를 만든다 — 깨끗한 1px
+///   경로라면 차수가 2 여야 한다. 걷어내면 **끝점이 정확히 둘**로 드러나고(획의 진짜
+///   시작과 끝이다) 홀수 차수는 2~8 로 떨어진다.
+///
+///   즉 **순회가 헤맨 것이 아니라 그래프가 잘못돼 있었다.** 남은 홀수 차수 4~8 개는
+///   진짜 자기교차(map_deep_03·04·05·special_01 — 사장님이 지적한 바로 그 넷)라
+///   패리티 보정이 조금 필요하다.
+class StrokeGraphShape {
+  const StrokeGraphShape({
+    required this.vertices,
+    required this.edges,
+    required this.components,
+    required this.oddDegree,
+    required this.endpoints,
+  });
+
+  /// 가지치기 뒤 살아남은 뼈대 픽셀 수.
+  final int vertices;
+
+  /// 무향 간선 수.
+  final int edges;
+
+  /// 연결 요소 수. 2 이상이면 펜을 떼야 한다.
+  final int components;
+
+  /// 홀수 차수 정점 수. 0 이나 2 여야 오일러 경로가 있다.
+  final int oddDegree;
+
+  /// 차수 1 인 정점 수 — 획의 자연스러운 시작·끝 후보다.
+  final int endpoints;
+
+  /// 되짚기 없이 한 붓으로 그릴 수 있나.
+  bool get eulerian => components == 1 && (oddDegree == 0 || oddDegree == 2);
+
+  @override
+  String toString() => '정점 $vertices · 간선 $edges · 요소 $components · '
+      '홀수차수 $oddDegree · 끝점 $endpoints · '
+      '${eulerian ? "한 붓 가능" : "한 붓 불가"}';
+}
+
+/// [mask] 의 뼈대 그래프를 재기만 한다 — 굽지 않는다.
+///
+///   `bakeOneStrokeOrder` 와 **같은 전처리**(형태정리 · 세선화 · 가지치기)를 쓴다.
+///   그래야 실제로 순회가 보는 그래프를 재는 것이 된다.
+StrokeGraphShape measureStrokeGraph(
+  StrokeMask mask, {
+  bool dropDiagonalShortcuts = false,
+}) {
+  final w = mask.width;
+  final h = mask.height;
+  var m = Uint8List(w * h);
+  for (var i = 0; i < m.length; i++) {
+    if (mask.alpha[i] > 128) m[i] = 1;
+  }
+  // 굽기와 **같은** 형태정리 — 닫힘 2회 뒤 열림 1회.
+  m = _erode(_dilate(m, w, h), w, h);
+  m = _erode(_dilate(m, w, h), w, h);
+  m = _dilate(_erode(m, w, h), w, h);
+  final cleaned = m;
+  final skel = _zhangSuen(Uint8List.fromList(cleaned), w, h);
+
+  final adj = <int, List<int>>{};
+  var skelCount = 0;
+  var area = 0;
+  for (var i = 0; i < cleaned.length; i++) {
+    if (cleaned[i] == 1) area++;
+  }
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      if (skel[y * w + x] == 0) continue;
+      skelCount++;
+      final list = <int>[];
+      for (var k = 0; k < 8; k++) {
+        final ny = y + _dy[k];
+        final nx = x + _dx[k];
+        if (_at(skel, w, h, ny, nx) != 1) continue;
+        if (dropDiagonalShortcuts && _dy[k] != 0 && _dx[k] != 0) {
+          // 두 직교 이웃이 살아 있으면 그 사이 대각선은 삼각형을 닫는 지름길이다.
+          if (_at(skel, w, h, ny, x) == 1 || _at(skel, w, h, y, nx) == 1) {
+            continue;
+          }
+        }
+        list.add(ny * w + nx);
+      }
+      adj[y * w + x] = list;
+    }
+  }
+  if (adj.isEmpty) {
+    return const StrokeGraphShape(
+      vertices: 0,
+      edges: 0,
+      components: 0,
+      oddDegree: 0,
+      endpoints: 0,
+    );
+  }
+  final width = area / (skelCount == 0 ? 1 : skelCount);
+  _pruneSpurs(adj, (width * kSpurWidths).round().clamp(6, 1 << 30));
+
+  var edges = 0;
+  var odd = 0;
+  var ends = 0;
+  for (final entry in adj.entries) {
+    final d = entry.value.length;
+    edges += d;
+    if (d.isOdd) odd++;
+    if (d == 1) ends++;
+  }
+  edges ~/= 2;
+
+  // 연결 요소.
+  final seen = <int>{};
+  var components = 0;
+  for (final start in adj.keys) {
+    if (!seen.add(start)) continue;
+    components++;
+    final stack = <int>[start];
+    while (stack.isNotEmpty) {
+      for (final n in adj[stack.removeLast()] ?? const <int>[]) {
+        if (adj.containsKey(n) && seen.add(n)) stack.add(n);
+      }
+    }
+  }
+
+  return StrokeGraphShape(
+    vertices: adj.length,
+    edges: edges,
+    components: components,
+    oddDegree: odd,
+    endpoints: ends,
+  );
+}
+
 /// 뼈대의 시각을 길 픽셀 전체로 — **가장 가까운** 뼈대의 값을 받는다.
 ///
 ///   ⚠️ 예전엔 8-이웃 FIFO BFS 로 "먼저 닿은 이웃의 값"을 복사했다. 그건 대각 이동도 1홉으로

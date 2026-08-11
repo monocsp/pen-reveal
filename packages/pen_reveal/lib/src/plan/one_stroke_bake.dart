@@ -392,7 +392,16 @@ Map<int, double>? _oneStrokeOrder(
       for (var k = 0; k < 8; k++) {
         final ny = y + _dy[k];
         final nx = x + _dx[k];
-        if (_at(skel, w, h, ny, nx) == 1) list.add(ny * w + nx);
+        if (_at(skel, w, h, ny, nx) != 1) continue;
+        // ⚠️ **모서리를 가로지르는 대각선은 갈래가 아니다.** 두 직교 이웃이 살아 있으면
+        //   그 사이 대각선은 삼각형을 닫는 **지름길**이다. 안 걷어내면 그래프가 오염되어
+        //   어떤 순서 규칙도 성립하지 않는다(실측: 합성 뱀꼴 선단 계단 442).
+        if (_dy[k] != 0 && _dx[k] != 0) {
+          if (_at(skel, w, h, ny, x) == 1 || _at(skel, w, h, y, nx) == 1) {
+            continue;
+          }
+        }
+        list.add(ny * w + nx);
       }
       adj[y * w + x] = list;
     }
@@ -408,30 +417,21 @@ Map<int, double>? _oneStrokeOrder(
   var cursor = 0.0;
   for (final start in _traversalStarts(adj)) {
     if (t.containsKey(start)) continue;
-    t[start] = cursor;
-    final stack = <int>[start];
-    while (stack.isNotEmpty) {
-      final v = stack.last;
-      int? nxt;
-      for (final cand in adj[v]!) {
-        if (!used.contains(v * 1000003 + cand)) {
-          nxt = cand;
-          break;
-        }
-      }
-      if (nxt == null) {
-        stack.removeLast();
-        continue;
-      }
-      used
-        ..add(v * 1000003 + nxt)
-        ..add(nxt * 1000003 + v);
-      if (!t.containsKey(nxt)) {
-        final diag = (v ~/ w != nxt ~/ w) && (v % w != nxt % w);
+    // ⚠️ **시각은 "걷기" 를 따라 매긴다 — 탐색 중에 매기지 않는다.**
+    //
+    //   예전엔 DFS 가 내려가면서 첫 방문에 찍었다. 그러면 가지 하나를 끝까지 그리고
+    //   갈림길로 되돌아온 순간 다음 가지가 시작되어, 화면에서 붓끝이 **순간이동**한다.
+    //   걷기의 이웃한 두 점은 언제나 8-이웃이라 그럴 수가 없다.
+    final route = _eulerRoute(adj, start, used, w);
+    for (var i = 0; i < route.length; i++) {
+      final v = route[i];
+      if (i > 0) {
+        final p = route[i - 1];
+        final diag = (p ~/ w != v ~/ w) && (p % w != v % w);
         cursor += diag ? 1.4142 : 1.0;
-        t[nxt] = cursor;
       }
-      stack.add(nxt);
+      // 되짚는 자리는 이미 그려졌다 — 시각을 다시 안 매긴다.
+      t.putIfAbsent(v, () => cursor);
     }
   }
   return t;
@@ -441,6 +441,83 @@ Map<int, double>? _oneStrokeOrder(
 ///
 ///   최상단 픽셀(= 인덱스 최솟값, 행 우선 저장이라 y 가 먼저 작아진다)이 든 덩어리가
 ///   맨 앞이고, 나머지는 큰 것부터다. 각 덩어리 안의 시작점도 그 덩어리의 최상단이다.
+
+/// 교차로에서 **직진을 우선**한다 — 90도 넘게 꺾지 않는다.
+///
+///   손으로 그릴 때 교차로에서 급히 되꺾지 않는다. 들어온 방향과의 코사인이 0 이상인
+///   후보(= 90도 이내)만 보고, 그중 가장 덜 꺾는 것을 고른다. 그런 후보가 없으면
+///   (막다른 길이라 되짚어야 하면) 어쩔 수 없이 전부에서 고른다.
+///
+///   ⚠️ **오일러 경로 위에서만 뜻이 있다.** 어느 변을 먼저 고르든 걷기는 모든 변을
+///   덮으므로, 이 선택은 **순서만** 바꾸고 덮개를 깨지 않는다. 예전에 DFS 위에 각도를
+///   얹었을 때는 그 보장이 없어 실제 지도에서 끝나는 자리가 망가졌다.
+///
+///   ⚠️ 첫 걸음은 들어온 방향이 없다 — 아래로 본다. 걷기는 위쪽 끝점에서 시작하므로
+///   손이 아래로 내려가는 것이 자연스럽다.
+int? _straightestNext(
+  List<int> candidates,
+  int v,
+  int? prev,
+  Set<int> used,
+  int w,
+) {
+  final iny = prev == null ? 1.0 : (v ~/ w - prev ~/ w).toDouble();
+  final inx = prev == null ? 0.0 : (v % w - prev % w).toDouble();
+  final inLen = math.sqrt(iny * iny + inx * inx);
+
+  int? best;
+  var bestScore = -2.0;
+  int? fallback;
+  var fallbackScore = -2.0;
+  for (final cand in candidates) {
+    if (used.contains(v * 1000003 + cand)) continue;
+    final dy = (cand ~/ w - v ~/ w).toDouble();
+    final dx = (cand % w - v % w).toDouble();
+    final outLen = math.sqrt(dy * dy + dx * dx);
+    final score = inLen <= 0 || outLen <= 0
+        ? 0.0
+        : (iny * dy + inx * dx) / (inLen * outLen);
+    if (score > fallbackScore) {
+      fallbackScore = score;
+      fallback = cand;
+    }
+    // 90도 이내만 "직진" 으로 친다.
+    if (score >= 0 && score > bestScore) {
+      bestScore = score;
+      best = cand;
+    }
+  }
+  return best ?? fallback;
+}
+
+/// 히어홀저 — [start] 에서 출발해 **모든 변을 한 번씩** 지나는 걷기.
+///
+///   돌아오는 것은 정점의 차례다. 이웃한 두 항목은 언제나 8-이웃이라, 이 차례대로
+///   시각을 매기면 붓끝이 건너뛸 수 없다.
+List<int> _eulerRoute(
+  Map<int, List<int>> adj,
+  int start,
+  Set<int> used,
+  int w,
+) {
+  final stack = <int>[start];
+  final out = <int>[];
+  while (stack.isNotEmpty) {
+    final v = stack.last;
+    final prev = stack.length >= 2 ? stack[stack.length - 2] : null;
+    final nxt = _straightestNext(adj[v] ?? const <int>[], v, prev, used, w);
+    if (nxt == null) {
+      out.add(stack.removeLast());
+      continue;
+    }
+    used
+      ..add(v * 1000003 + nxt)
+      ..add(nxt * 1000003 + v);
+    stack.add(nxt);
+  }
+  return out.reversed.toList();
+}
+
 List<int> _traversalStarts(Map<int, List<int>> adj) {
   final seen = <int>{};
   // (크기, 최상단) — 최상단이 그대로 시작점이다.
@@ -448,17 +525,22 @@ List<int> _traversalStarts(Map<int, List<int>> adj) {
   for (final key in adj.keys) {
     if (!seen.add(key)) continue;
     var top = key;
+    // ⚠️ **끝점(차수 1)에서 출발한다.** 걷기가 획 한복판에서 시작하면 양쪽으로 갈라져
+    //   엉뚱한 데서 끝난다. 대각 지름길을 걷어내고 나니 정본 열 지도가 **모두 끝점 둘**
+    //   을 갖는다(그 전에는 0~1 개였다) — 위쪽 것에서 출발한다.
+    int? topEnd;
     var size = 0;
     final queue = <int>[key];
     for (var head = 0; head < queue.length; head++) {
       final v = queue[head];
       size++;
       if (v < top) top = v;
+      if (adj[v]!.length == 1 && (topEnd == null || v < topEnd)) topEnd = v;
       for (final n in adj[v]!) {
         if (seen.add(n)) queue.add(n);
       }
     }
-    components.add((size, top));
+    components.add((size, topEnd ?? top));
   }
   if (components.isEmpty) return const <int>[];
 

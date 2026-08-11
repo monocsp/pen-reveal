@@ -48,6 +48,44 @@ const _endNearX = 40.0;
 ///   확실히 건다 — 지도 세로가 420 이니 아래쪽에서 시작하면 200 을 훌쩍 넘는다.
 const _startNearTop = 140;
 
+/// 펜이 **왔던 자리로 되돌아오나** — 되짚기를 잡는다.
+///
+///   ⚠️ 끝점·시작점 검사만으로는 못 잡는 것이 있다. 세선화가 교차점 하나를 갈래 3 둘로
+///   쪼개면 그 사이를 두 번 지나야 짝이 맞고, 그러면 펜이 **올라갔다 다시 내려온다.**
+///   걸음은 고르고 전선도 하나라 다른 검사는 전부 통과한다 — 화면에서만 보인다.
+///
+///   길 픽셀을 시각 순으로 `_bins` 칸에 세우고, 각 칸의 무게중심이 `_backGap` 칸보다
+///   이전의 어느 자리와 `_backNear` px 안으로 다시 붙는지 센다.
+const _bins = 60;
+const _backGap = 4;
+
+/// 앞뒤 `_backGap` 칸의 방향이 이보다 더 마주보면 "되돌아갔다" 로 센다.
+///
+///   −1 이 완전히 반대다. −0.5 는 120 도 넘게 꺾인 것 — 손으로는 그렇게 안 그린다.
+const _backTurn = -0.5;
+
+/// 지도별 되돌아감 상한 — **실측값**이다(굽기 420).
+///
+///   ⚠️ **map_special_01 의 5 가 이 시험이 겨냥한 자리다.** 세선화가 X 교차 하나를
+///   갈래 3 둘로 쪼개 놓아서, 그 사이 다리를 두 번 지나야 짝이 맞는다 — 그래서 펜이
+///   올라갔다 다시 내려온다. 쪼개진 교차점을 도로 붙이면 이 값이 **4** 로 준다.
+///   그때 이 값을 4 로 조인다.
+///
+///   나머지 값은 지금 그대로 못 박아 둔다. 0 인 지도(basic 셋·deep_01)는 곧은 길이라
+///   뒤집힘이 아예 없어야 하고, 나머지는 하트·고리를 도는 정상적인 꺾임이다.
+const _backBudget = <String, int>{
+  'map_basic_01': 0,
+  'map_basic_02': 0,
+  'map_basic_03': 0,
+  'map_deep_01': 0,
+  'map_deep_02': 6,
+  'map_deep_03': 1,
+  'map_deep_04': 5,
+  'map_deep_05': 9,
+  'map_deep_06': 6,
+  'map_special_01': 5,
+};
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -130,6 +168,36 @@ void main() {
           }
           cx = cx ~/ n;
           cy = cy ~/ n;
+
+          // 되돌아옴 — 칸별 무게중심으로 잰다.
+          final tips = <(double, double)>[];
+          for (var k = 0; k < _bins; k++) {
+            final lo = road.length * k ~/ _bins;
+            final hi = road.length * (k + 1) ~/ _bins;
+            if (hi <= lo) continue;
+            var tx = 0.0;
+            var ty = 0.0;
+            for (var j = lo; j < hi; j++) {
+              tx += road[j] % w;
+              ty += road[j] ~/ w;
+            }
+            tips.add((tx / (hi - lo), ty / (hi - lo)));
+          }
+          var back = 0;
+          for (var i = _backGap; i + _backGap < tips.length; i++) {
+            final ax = tips[i].$1 - tips[i - _backGap].$1;
+            final ay = tips[i].$2 - tips[i - _backGap].$2;
+            final bx = tips[i + _backGap].$1 - tips[i].$1;
+            final by = tips[i + _backGap].$2 - tips[i].$2;
+            final la = math.sqrt(ax * ax + ay * ay);
+            final lb = math.sqrt(bx * bx + by * by);
+            if (la < 1 || lb < 1) continue;
+            if ((ax * bx + ay * by) / (la * lb) < _backTurn) back++;
+          }
+          final budget = _backBudget[key];
+          if (budget != null && back > budget) {
+            drift.add('$key 펜이 이미 지난 자리로 $back 번 되돌아왔다 (상한 $budget)');
+          }
 
           if (startY > _startNearTop) {
             drift.add('$key 길이 위가 아니라 y=$startY 에서 시작한다');

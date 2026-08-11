@@ -31,7 +31,11 @@ class _ReviewHomeState extends State<ReviewHome> {
   String? _selected;
   final _play = ValueNotifier<int>(0);
 
-  double _k = 24;
+  /// 붓끝 번짐 — **기본은 번짐 없음(칼같이)**이다.
+  ///
+  ///   `alpha = k·(진행도·255 − 순서값)` 이라 `255/k` 가 반투명 띠의 폭이다. 255 면
+  ///   1코드라 사실상 이진 임계다 — 그려지는 자리가 흐릿하지 않다.
+  double _k = 255;
   var _speed = RevealSpeed.normal;
 
   /// 정본 문구는 전부 "발견한곳" 4음절이다.
@@ -43,7 +47,10 @@ class _ReviewHomeState extends State<ReviewHome> {
   ///   래스터에서 음절 경계를 추정해 보려고 세로비를 재 봤지만 갈리지 않았다 — 붙은
   ///   음절이 1.19~1.42 인데 받침 조각이 1.67~2.83 이라 구간이 겹친다. 그리는 쪽은 자기가
   ///   쓴 글자 수를 아니까, 그 값을 받는 것이 맞다.
-  int _syllables = 4;
+  ///
+  ///   기본은 **안 가름**이다. 힌트는 그리는 쪽이 아는 값이라 여기서 마음대로 정하지
+  ///   않는다 — 글자 수가 틀리면 엉뚱한 데를 자른다.
+  int _syllables = 0;
 
   @override
   void initState() {
@@ -226,10 +233,10 @@ class _SettingsSheet extends StatelessWidget {
   /// 정본 실측 — 올리면 번짐은 줄고 선단은 딱딱해진다(맞바꿈이라 정답이 없다).
   static const _sharpNote = <int, String>{
     12: '두 배로 번진다',
-    24: '기본값',
+    24: '많이 번진다',
     48: '번짐 절반 · 계단이 세 배',
     96: '번짐 1/4',
-    255: '거의 칼같이 — 선단 1코드',
+    255: '기본값 — 번짐 없음(선단 1코드)',
   };
 
   String get _note {

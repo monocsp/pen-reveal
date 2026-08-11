@@ -392,17 +392,7 @@ Map<int, double>? _oneStrokeOrder(
       for (var k = 0; k < 8; k++) {
         final ny = y + _dy[k];
         final nx = x + _dx[k];
-        if (_at(skel, w, h, ny, nx) != 1) continue;
-        // ⚠️ **모서리를 가로지르는 대각선은 갈래가 아니다.** 8-연결 뼈대에서 두 직교
-        //   이웃이 살아 있으면 그 사이 대각선은 삼각형을 닫는 **지름길**이고, 실제로는
-        //   같은 획이 꺾이는 자리다. 그걸 간선으로 두면 순회가 획을 따라가지 않고
-        //   질러가 버려서, 굵은 획이 겹치는 자리에서 시간이 튄다.
-        final diagonal = _dy[k] != 0 && _dx[k] != 0;
-        if (diagonal &&
-            (_at(skel, w, h, ny, x) == 1 || _at(skel, w, h, y, nx) == 1)) {
-          continue;
-        }
-        list.add(ny * w + nx);
+        if (_at(skel, w, h, ny, nx) == 1) list.add(ny * w + nx);
       }
       adj[y * w + x] = list;
     }
@@ -422,38 +412,11 @@ Map<int, double>? _oneStrokeOrder(
     final stack = <int>[start];
     while (stack.isNotEmpty) {
       final v = stack.last;
-      // ⚠️ **갈림길에서는 오던 방향을 잇는다 — 펜은 급하게 되꺾지 않는다.**
-      //
-      //   예전엔 인접 리스트 순서대로 첫 미사용 이웃을 집었다. 그 리스트는 [_dy]·[_dx]
-      //   순서(NW·N·NE·E·SE·S·SW·W)로 만들어지므로 **위쪽이 언제나 먼저**다. 그래서
-      //   갈림길마다 아래로 이어지는 길을 두고 위로 되꺾었다 — 하트(map_special_01)에서
-      //   오른쪽을 타고 내려오다 하트 아래까지 안 가고 위로 올라가 버리고, 고리
-      //   (map_deep_04·map_deep_05)에서도 먼저 위로 갔다.
-      //
-      //   ⚠️ **이것만으로는 안 된다.** 대각 지름길을 안 걷어내고 각도만 쓰면, 굵은 획이
-      //   겹치는 자리에서 "가장 덜 꺾는" 후보가 **건너편 팔**이 되어 질러간다(실측: 합성
-      //   뱀꼴에서 선단 계단 0 → 266). 인접 리스트를 만들 때 모서리 대각선을 먼저
-      //   걷어내야 이 규칙이 성립한다.
-      final prev = stack.length >= 2 ? stack[stack.length - 2] : null;
-      // 첫 걸음은 들어온 방향이 없다 — 아래로 본다. 순회는 언제나 맨 위에서 시작하므로
-      //   (`_traversalStarts`) 손이 아래로 내려가는 것이 자연스럽다.
-      final iny = prev == null ? 1.0 : (v ~/ w - prev ~/ w).toDouble();
-      final inx = prev == null ? 0.0 : (v % w - prev % w).toDouble();
-      final inLen = math.sqrt(iny * iny + inx * inx);
       int? nxt;
-      var bestScore = -2.0;
       for (final cand in adj[v]!) {
-        if (used.contains(v * 1000003 + cand)) continue;
-        final dy = (cand ~/ w - v ~/ w).toDouble();
-        final dx = (cand % w - v % w).toDouble();
-        final outLen = math.sqrt(dy * dy + dx * dx);
-        final score = inLen <= 0 || outLen <= 0
-            ? 0.0
-            : (iny * dy + inx * dx) / (inLen * outLen);
-        // `>` 라 맞비기면 인접 리스트에서 먼저 온 쪽이 남는다 — 결정적이다.
-        if (score > bestScore) {
-          bestScore = score;
+        if (!used.contains(v * 1000003 + cand)) {
           nxt = cand;
+          break;
         }
       }
       if (nxt == null) {

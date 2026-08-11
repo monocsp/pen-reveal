@@ -9,13 +9,15 @@
 //     · 시작은 위쪽 가장자리 근처여야 하고,
 //     · **끝은 X 옆이어야 한다** — X 는 도착지라 맨 마지막에 닿는다.
 //
-//   실측(굽기 420, 지금 코드):
+//   실측(굽기 420, 지금 코드) — 획의 시작 y, 끝 무게중심, X 중심:
 //
-//       지도             길 시작      길 끝        X 중심      끝↔X 거리
-//       map_basic_01    (139,71)   (110,205)   (113,216)      11
-//       map_deep_04     (139,71)   (239,275)   (240,295)      20
-//       map_deep_05     (139,71)   (177,283)   (175,305)      22
-//       map_special_01  (139,71)   (105,294)   (108,305)      11
+//       basic_01  77 · (160,213) → X(160,223)      basic_02  73 · (220,210) → (220,220)
+//       basic_03  88 · (157,199) → X(157,209)      deep_01   99 · (106,276) → (105,287)
+//       deep_02   82 · (104,281) → X(104,293)      deep_03   87 · (207,276) → (220,276)
+//       deep_04   86 · (235,280) → X(240,295)      deep_05   79 · (172,292) → (175,305)
+//       deep_06   82 · (104,281) → X(104,293)      special_01 81 · (109,293) → (108,305)
+//
+//   끝↔X 거리는 열 지도 모두 10~16px 이고, 시작 y 는 73~99 다.
 //
 //   ⚠️ 되돌린 그 수정은 여기서 이렇게 어긋났다 — deep_04 끝이 (122,186) 으로, deep_05 는
 //   (136,74) 로 갔다. deep_05 는 **시작점에서 3px** 다. 한 바퀴 돌아 제자리에서 끝난
@@ -35,16 +37,16 @@ const _side = 420;
 
 /// 길 끝과 X 중심이 이만큼까지는 떨어져 있어도 된다(굽기 420 픽셀).
 ///
-///   실측 최악이 22 다(map_deep_05). X 는 길 끝을 **덮고** 그려지므로 중심까지는 X 반지름
-///   만큼 떨어지는 것이 정상이다. 40 이면 그 여유를 주면서도, 되돌린 수정이 만든
-///   어긋남(deep_04 는 약 110px, deep_05 는 약 230px)은 확실히 건다.
+///   실측 최악이 16 다. X 는 길 끝을 **덮고** 그려지므로 중심까지는 X 반지름만큼
+///   떨어지는 것이 정상이다. 40 이면 그 여유를 주면서도, 되돌린 수정이 만든 어긋남
+///   (deep_04 161px · deep_05 234px)은 확실히 건다.
 const _endNearX = 40.0;
 
 /// 길 시작이 위쪽 가장자리에서 이만큼 안쪽까지는 들어와도 된다.
 ///
-///   실측은 넷 다 y=71 이고 그게 지도 상단이다. 120 이면 넉넉하면서도 "아래에서
-///   시작했다" 는 확실히 건다.
-const _startNearTop = 120;
+///   실측 최악이 99 다(map_deep_01). 140 이면 여유를 주면서도 "아래에서 시작했다" 는
+///   확실히 건다 — 지도 세로가 420 이니 아래쪽에서 시작하면 200 을 훌쩍 넘는다.
+const _startNearTop = 140;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -83,23 +85,31 @@ void main() {
             continue;
           }
 
-          // 가장 먼저 / 가장 나중에 드러나는 길 픽셀.
-          var lo = 1 << 30;
-          var hi = -1;
-          var loAt = 0;
-          var hiAt = 0;
-          for (var i = 0; i < plan.segmentId.length; i++) {
-            if (!roadIds.contains(plan.segmentId[i])) continue;
-            final v = plan.within[i];
-            if (v < lo) {
-              lo = v;
-              loAt = i;
-            }
-            if (v > hi) {
-              hi = v;
-              hiAt = i;
-            }
+          // ⚠️ **단일 최대 픽셀로 재지 않는다.** 한 점은 잡음에 흔들린다 —
+          //   마지막 0.5% 의 무게중심으로 본다.
+          // ⚠️ **`within == 0` 은 빼야 한다.** `_flattenNonStrokes` 가 찢어진 종이
+          //   가장자리를 "처음부터 있던 것" 으로 눕히면서 시각 0 을 준다. 그걸 안 빼면
+          //   "가장 먼저 드러나는 길 픽셀" 이 획의 시작이 아니라 **종이 가장자리**가 되어,
+          //   펜이 어디서 시작하든 y 가 늘 71 로 나온다 — 시험이 아무것도 안 잰다.
+          //   (`coverage_test.dart` 의 `startsNearTop` 이 지금 그 상태다.)
+          final road = <int>[
+            for (var i = 0; i < plan.segmentId.length; i++)
+              if (roadIds.contains(plan.segmentId[i]) && plan.within[i] > 0) i,
+          ]..sort((a, b) => plan.within[a].compareTo(plan.within[b]));
+          if (road.isEmpty) {
+            drift.add('$key 길 픽셀이 없다');
+            continue;
           }
+          final take = math.max(1, (road.length * 0.005).round());
+          var sx = 0;
+          var sy = 0;
+          for (final i in road.sublist(road.length - take)) {
+            sx += i % w;
+            sy += i ~/ w;
+          }
+          final ex = sx ~/ take;
+          final ey = sy ~/ take;
+          final startY = road.first ~/ w;
 
           // X 중심 — 두 획의 상자 가운데를 평균한다.
           var cx = 0;
@@ -121,13 +131,10 @@ void main() {
           cx = cx ~/ n;
           cy = cy ~/ n;
 
-          final startY = loAt ~/ w;
           if (startY > _startNearTop) {
             drift.add('$key 길이 위가 아니라 y=$startY 에서 시작한다');
           }
 
-          final ex = hiAt % w;
-          final ey = hiAt ~/ w;
           final dx = (ex - cx).toDouble();
           final dy = (ey - cy).toDouble();
           final away = math.sqrt(dx * dx + dy * dy);

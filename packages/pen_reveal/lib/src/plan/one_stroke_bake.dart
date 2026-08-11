@@ -96,7 +96,7 @@ OneStrokeResult bakeOneStrokeOrder(StrokeMask input) {
   }
 
   final skel = _zhangSuen(Uint8List.fromList(m), w, h);
-  final order = _oneStrokeOrder(skel, m, w, h);
+  final order = _oneStrokeOrder(skel, m, w, h, left, top);
 
   final out = Uint8List(fullW * fullH)..fillRange(0, fullW * fullH, 255);
   if (order == null || order.isEmpty) {
@@ -377,6 +377,8 @@ Map<int, double>? _oneStrokeOrder(
   Uint8List mask,
   int w,
   int h,
+  int left,
+  int top,
 ) {
   final adj = <int, List<int>>{};
   var skelCount = 0;
@@ -426,6 +428,19 @@ Map<int, double>? _oneStrokeOrder(
     for (final n in e.value) {
       remaining[e.key * 1000003 + n] = 1;
     }
+  }
+  // 진단 — 얇게 깎은 선과 인접 관계를 그대로 흘려보낸다.
+  {
+    debugSkeletonSink?.call(
+      DebugSkeleton(
+        width: w,
+        height: h,
+        left: left,
+        top: top,
+        pixels: <int>[...adj.keys],
+        degrees: <int>[for (final e in adj.entries) e.value.length],
+      ),
+    );
   }
   if (debugRouteSink != null) {
     final js = <String>[
@@ -546,6 +561,31 @@ List<int> _eulerRoute(
 
 /// 진단용 — 순회가 무엇을 정했는지 흘려보낸다. 평소엔 null 이라 아무 비용도 없다.
 void Function(String)? debugRouteSink;
+
+/// 얇게 깎은 선(가시 제거·대각선 정리까지 끝난 상태)과 자리마다의 갈래 수.
+class DebugSkeleton {
+  const DebugSkeleton({
+    required this.width,
+    required this.height,
+    required this.left,
+    required this.top,
+    required this.pixels,
+    required this.degrees,
+  });
+
+  /// 잘라낸 창(ROI)의 크기와, 원본에서의 왼쪽 위 자리.
+  final int width;
+  final int height;
+  final int left;
+  final int top;
+
+  /// 얇은 선을 이루는 자리들(창 안 좌표의 `y * width + x`)과 각 자리의 갈래 수.
+  final List<int> pixels;
+  final List<int> degrees;
+}
+
+/// 진단용 — 얇게 깎은 결과를 그대로 넘겨준다. 평소엔 null 이라 비용이 없다.
+void Function(DebugSkeleton)? debugSkeletonSink;
 
 /// 짝이 안 맞는 자리끼리 이어, 그 사이를 **두 번 지나게** 한다.
 ///

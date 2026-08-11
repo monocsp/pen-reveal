@@ -65,8 +65,8 @@ const _golden = <String, (String, String, String, String, int)>{
   'map_deep_06@420': ('5d4fafd0', '4a7c893a', '552f8800', '194cc93d', 3529),
   'map_deep_06@840': ('e1ee5ef9', 'db4416d5', '2ddd7ae2', 'b5355e11', 4125),
   'map_special_01@210': ('56a4f40e', 'e9a05dfd', '721a4899', '739fabf0', 3097),
-  'map_special_01@420': ('b9f8d307', 'f72f14ba', 'f7b30ccc', '46f61f22', 3392),
-  'map_special_01@840': ('702b0c04', '5d65ac39', '39699507', '46512c9e', 3858),
+  'map_special_01@420': ('b9f8d307', 'ab3e2234', 'd8fed11f', '43b608a5', 3460),
+  'map_special_01@840': ('702b0c04', 'ee8c985e', 'b6c4cf4a', '19532a80', 3911),
 };
 
 /// FNV-1a **32비트** — 짧고 의존성이 없다. 암호학적 용도가 아니라 회귀 감지용이라

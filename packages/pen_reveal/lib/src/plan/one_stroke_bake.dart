@@ -461,7 +461,11 @@ Map<int, double>? _oneStrokeOrder(
     //   예전엔 DFS 가 내려가면서 첫 방문에 찍었다. 그러면 가지 하나를 끝까지 그리고
     //   갈림길로 되돌아온 순간 다음 가지가 시작되어, 화면에서 붓끝이 **순간이동**한다.
     //   걷기의 이웃한 두 점은 언제나 8-이웃이라 그럴 수가 없다.
-    final route = _expandMerged(_eulerRoute(adj, start, remaining, w), merged);
+    // ① 짝을 먼저 정해 두고 잇는다. 안 되면 ② 예전 방식.
+    final traced =
+        _transitionRoute(adj, start, Map<int, int>.from(remaining), w, width) ??
+            _eulerRoute(adj, start, remaining, w);
+    final route = _expandMerged(traced, merged);
     for (var i = 0; i < route.length; i++) {
       final v = route[i];
       if (i > 0) {
@@ -533,6 +537,137 @@ int? _straightestNext(
 ///
 ///   돌아오는 것은 정점의 차례다. 이웃한 두 항목은 언제나 8-이웃이라, 이 차례대로
 ///   시각을 매기면 붓끝이 건너뛸 수 없다.
+/// 교차로에서 **가장 덜 꺾는 팔**을 실제로 그려지는 순서에 적용한다.
+///
+///   ⚠️ **탐욕적으로 고르는 것으로는 안 된다.** 히어홀저는 막히면 되돌아가 다른 고리를
+///   끼워 넣는데, 그러면 갈림길에서 실제로 이어지는 두 팔이 탐욕 선택과 달라진다.
+///   그래서 **먼저 짝을 정해 두고**(transition system) 그 짝을 지키며 잇는다.
+///
+///   자리마다 팔을 둘씩 묶는다 — "이 팔로 들어오면 저 팔로 나간다". 묶는 기준은
+///   **얼마나 마주보나**다. 원래 한 곡선이었다면 두 팔은 서로 반대를 향한다.
+///
+///       비용(짝짓기) = Σ (1 + 접선ᵢ · 접선ⱼ)      ← 마주볼수록(−1) 작다
+///
+///   실측 map_special_01 교차점 (168,146): 들어온 방향에서
+///   하트 아래 26° · 꼬리 47° · 하트 위 80° 다. 짝짓기는 (길↔하트아래),(하트위↔꼬리)
+///   가 되어 **위끝 → 하트 한 바퀴 → 꼬리 → X** 한 붓이 나온다.
+///
+///   모든 변을 다 쓰지 못하면(따로 노는 고리가 남으면) null 을 주고, 부르는 쪽이
+///   예전 방식으로 되돌아간다.
+List<int>? _transitionRoute(
+  Map<int, List<int>> adj,
+  int start,
+  Map<int, int> remaining,
+  int w,
+  double width,
+) {
+  final reach = width.round().clamp(4, 24);
+  // 자리마다 팔 목록(중복 포함) 과 짝.
+  final slots = <int, List<int>>{};
+  final mate = <int, List<int>>{};
+  var edgeCount = 0;
+  for (final e in adj.entries) {
+    final v = e.key;
+    final list = <int>[];
+    for (final n in e.value) {
+      final m = remaining[v * 1000003 + n] ?? 0;
+      for (var i = 0; i < m; i++) {
+        list.add(n);
+      }
+    }
+    edgeCount += list.length;
+    slots[v] = list;
+    mate[v] = _pairArms(adj, v, list, reach, w);
+  }
+  edgeCount ~/= 2;
+
+  final used = <int, List<bool>>{
+    for (final e in slots.entries)
+      e.key: List<bool>.filled(e.value.length, false),
+  };
+
+  /// v 에서 u 로 가는, 아직 안 쓴 팔의 자리 번호.
+  int slotOf(int v, int u) {
+    final list = slots[v]!;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] == u && !used[v]![i]) return i;
+    }
+    return -1;
+  }
+
+  final route = <int>[start];
+  var cur = start;
+  var exit = 0;
+  if (slots[start]!.isEmpty) return null;
+  var walked = 0;
+  while (walked <= edgeCount) {
+    if (exit < 0 || exit >= slots[cur]!.length || used[cur]![exit]) {
+      // 짝이 막혔으면 아무 안 쓴 팔이나 — 끝점에서만 일어난다.
+      exit = used[cur]!.indexOf(false);
+      if (exit < 0) break;
+    }
+    final nxt = slots[cur]![exit];
+    used[cur]![exit] = true;
+    final back = slotOf(nxt, cur);
+    if (back < 0) return null;
+    used[nxt]![back] = true;
+    route.add(nxt);
+    walked++;
+    exit = mate[nxt]![back];
+    cur = nxt;
+  }
+  // 다 못 썼으면 따로 노는 고리가 남았다는 뜻이다 — 이 짝짓기는 포기한다.
+  if (walked != edgeCount) return null;
+  return route;
+}
+
+/// 한 자리의 팔들을 **가장 마주보는 것끼리** 둘씩 묶는다.
+///
+///   되돌려 준 값 `mate[i]` 는 i 번 팔로 들어왔을 때 나갈 팔의 번호다. 홀수 개면
+///   하나가 짝 없이 남는데(획의 시작·끝) 자기 자신을 가리켜 둔다 — 부르는 쪽이
+///   "막혔다" 로 보고 아무 팔이나 고른다.
+List<int> _pairArms(
+  Map<int, List<int>> adj,
+  int v,
+  List<int> arms,
+  int reach,
+  int w,
+) {
+  final n = arms.length;
+  final mate = List<int>.generate(n, (i) => i);
+  if (n < 2) return mate;
+  final dirs = <(double, double)?>[
+    for (final a in arms) _armDirection(adj, v, a, reach, w),
+  ];
+  // 가장 마주보는 짝부터 차례로 묶는다 — n 이 작아서 이걸로 충분하다.
+  final taken = List<bool>.filled(n, false);
+  for (var round = 0; round + 1 < n; round += 2) {
+    var bestCost = double.infinity;
+    var bi = -1;
+    var bj = -1;
+    for (var i = 0; i < n; i++) {
+      if (taken[i]) continue;
+      for (var j = i + 1; j < n; j++) {
+        if (taken[j]) continue;
+        final a = dirs[i];
+        final b = dirs[j];
+        final c = (a == null || b == null) ? 2.0 : 1.0 + _dot(a, b);
+        if (c < bestCost) {
+          bestCost = c;
+          bi = i;
+          bj = j;
+        }
+      }
+    }
+    if (bi < 0) break;
+    taken[bi] = true;
+    taken[bj] = true;
+    mate[bi] = bj;
+    mate[bj] = bi;
+  }
+  return mate;
+}
+
 List<int> _eulerRoute(
   Map<int, List<int>> adj,
   int start,
@@ -830,6 +965,10 @@ const double _kCrossCollinear = 0.98;
   if (len < 1) return null;
   return (dx / len, dy / len);
 }
+
+/// 두 방향의 내적. 팔은 전부 자리 바깥을 향하므로 **−1 이 서로 마주보는 것**이다.
+double _dot((double, double) p, (double, double) q) =>
+    p.$1 * q.$1 + p.$2 * q.$2;
 
 double _absDot((double, double) p, (double, double) q) {
   final d = p.$1 * q.$1 + p.$2 * q.$2;

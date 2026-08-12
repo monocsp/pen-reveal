@@ -378,8 +378,9 @@ Map<int, double>? _oneStrokeOrder(
   int w,
   int h,
   int left,
-  int top,
-) {
+  int top, {
+  bool merge = true,
+}) {
   final adj = <int, List<int>>{};
   var skelCount = 0;
   var area = 0;
@@ -416,7 +417,8 @@ Map<int, double>? _oneStrokeOrder(
 
   // ⚠️ **쪼개진 교차점을 도로 한 점으로 붙인다.** 이걸 먼저 해야 짝이 맞는다.
   //   자세한 이유는 [_mergeSplitCrossings] 주석에 있다.
-  final merged = _mergeSplitCrossings(adj, w, width);
+  final merged =
+      merge ? _mergeSplitCrossings(adj, w, width) : <int, _MergedCrossing>{};
 
   final t = <int, double>{};
   // 변마다 "몇 번 더 지날 수 있나" 를 센다. 붙이고도 홀수가 남으면 [_pairOddVertices]
@@ -616,6 +618,7 @@ List<int>? _transitionRoute(
     exit = mate[nxt]![back];
     cur = nxt;
   }
+  // 다 못 썼으면 따로 노는 고리가 남았다는 뜻이다 — 이 짝짓기는 포기한다.
   // 다 못 썼으면 따로 노는 고리가 남았다는 뜻이다 — 이 짝짓기는 포기한다.
   if (walked != edgeCount) return null;
   return route;
@@ -939,7 +942,7 @@ bool _looksLikeCrossing(
 ///   못 다룬다(`pen_tip_corpus_test` 가 한 프레임 76px > 70 으로 잡는다). 원인을 잡기
 ///   전까지는 **증거가 확실한 것만** 붙인다. 고치고 나면 이 값을 0.9 근처로 내리고
 ///   여기를 다시 쓴다.
-const double _kCrossCollinear = 0.98;
+const double _kCrossCollinear = 0.96;
 
 /// [from] 에서 [first] 쪽으로 [reach] 만큼 걸어가 얻은 방향(바깥쪽을 향한 단위 벡터).
 (double, double)? _armDirection(

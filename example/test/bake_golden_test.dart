@@ -64,7 +64,7 @@ const _golden = <String, (String, String, String, String, int)>{
   'map_deep_06@210': ('a2f819ed', '0cbc47b4', '65d0e7b8', '25ab1d1e', 3137),
   'map_deep_06@420': ('5d4fafd0', '4a7c893a', '552f8800', '194cc93d', 3529),
   'map_deep_06@840': ('e1ee5ef9', 'db4416d5', '2ddd7ae2', 'b5355e11', 4125),
-  'map_special_01@210': ('56a4f40e', 'e9a05dfd', '721a4899', '739fabf0', 3097),
+  'map_special_01@210': ('56a4f40e', 'fa4987da', '3bd47c67', '739fabf0', 3097),
   'map_special_01@420': ('b9f8d307', 'ab3e2234', 'd8fed11f', '43b608a5', 3460),
   'map_special_01@840': ('702b0c04', 'ee8c985e', 'b6c4cf4a', '19532a80', 3911),
 };

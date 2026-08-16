@@ -96,7 +96,7 @@ OneStrokeResult bakeOneStrokeOrder(StrokeMask input) {
   }
 
   final skel = _zhangSuen(Uint8List.fromList(m), w, h);
-  final order = _oneStrokeOrder(skel, m, w, h);
+  final order = _oneStrokeOrder(skel, m, w, h, left, top);
 
   final out = Uint8List(fullW * fullH)..fillRange(0, fullW * fullH, 255);
   if (order == null || order.isEmpty) {
@@ -377,6 +377,8 @@ Map<int, double>? _oneStrokeOrder(
   Uint8List mask,
   int w,
   int h,
+  int left,
+  int top,
 ) {
   final adj = <int, List<int>>{};
   var skelCount = 0;
@@ -402,6 +404,19 @@ Map<int, double>? _oneStrokeOrder(
   final width = area / (skelCount == 0 ? 1 : skelCount);
   _pruneSpurs(adj, (width * kSpurWidths).round().clamp(6, 1 << 30));
   if (adj.isEmpty) return null;
+
+  // 진단 — 가시까지 걷어낸 **얇은 선**을 그대로 흘려보낸다. 평소엔 sink 가 null 이라
+  //   `?.call` 한 번 값이고, 그마저도 그림당 한 번이다.
+  debugSkeletonSink?.call(
+    DebugSkeleton(
+      width: w,
+      height: h,
+      left: left,
+      top: top,
+      pixels: <int>[...adj.keys],
+      degrees: <int>[for (final e in adj.entries) e.value.length],
+    ),
+  );
 
   final t = <int, double>{};
   final used = <int>{};
@@ -841,3 +856,36 @@ Float32List _spread(Map<int, double> t, Uint8List mask, int w, int h) {
   }
   return out;
 }
+
+/// 얇게 깎은 선(가시 제거까지 끝난 상태)과 자리마다의 갈래 수.
+///
+///   ⚠️ **진단 전용이다.** 연출은 이 값을 안 본다 — 굽기가 내는 것은 순서 텍스처뿐이고,
+///   여기 담긴 것은 그 중간 산물이라 언제든 모양이 바뀔 수 있다.
+class DebugSkeleton {
+  const DebugSkeleton({
+    required this.width,
+    required this.height,
+    required this.left,
+    required this.top,
+    required this.pixels,
+    required this.degrees,
+  });
+
+  /// 잘라낸 창(ROI)의 크기와, 원본에서의 왼쪽 위 자리.
+  final int width;
+  final int height;
+  final int left;
+  final int top;
+
+  /// 얇은 선을 이루는 자리들(창 안 좌표의 `y * width + x`)과 각 자리의 갈래 수.
+  ///
+  ///   갈래 수 1 = 끝점, 2 = 지나가는 자리, 3 이상 = 갈림길. 단순화가 잘 됐는지는
+  ///   **갈림길이 몇 개나 남았는지**로 거의 다 읽힌다.
+  final List<int> pixels;
+  final List<int> degrees;
+}
+
+/// 진단용 — 얇게 깎은 결과를 그대로 넘겨준다. 평소엔 null 이라 비용이 없다.
+///
+///   ⚠️ 전역 상태다. 시험에서 쓰고 나면 반드시 `null` 로 되돌려야 다음 시험이 안 샌다.
+void Function(DebugSkeleton)? debugSkeletonSink;

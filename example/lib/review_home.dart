@@ -12,6 +12,7 @@
 import 'package:flutter/material.dart';
 import 'package:pen_reveal_example/fixtures/corpus_maps.dart';
 import 'package:pen_reveal_example/reveal_bench.dart';
+import 'package:pen_reveal_example/skeleton_view.dart';
 import 'package:pen_reveal_flutter/pen_reveal_flutter.dart';
 
 /// 정본 지도를 보며 가파르기를 정하는 화면.
@@ -51,6 +52,14 @@ class _ReviewHomeState extends State<ReviewHome> {
       appBar: AppBar(
         title: const Text('연출 확인'),
         actions: [
+          // 굽기의 중간 산물(얇은 선)을 보는 화면. 연출과 별개라 여기서 바로 연다.
+          IconButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const SkeletonView()),
+            ),
+            icon: const Icon(Icons.polyline_outlined),
+            tooltip: '얇은 선 (단순화 결과)',
+          ),
           IconButton(
             onPressed: widget.onOpenWorkbench,
             icon: const Icon(Icons.science_outlined),

@@ -429,19 +429,6 @@ Map<int, double>? _oneStrokeOrder(
       remaining[e.key * 1000003 + n] = 1;
     }
   }
-  // 진단 — 얇게 깎은 선과 인접 관계를 그대로 흘려보낸다.
-  {
-    debugSkeletonSink?.call(
-      DebugSkeleton(
-        width: w,
-        height: h,
-        left: left,
-        top: top,
-        pixels: <int>[...adj.keys],
-        degrees: <int>[for (final e in adj.entries) e.value.length],
-      ),
-    );
-  }
   if (debugRouteSink != null) {
     final js = <String>[
       for (final e in adj.entries)
@@ -454,6 +441,12 @@ Map<int, double>? _oneStrokeOrder(
     ];
     debugRouteSink!('갈림 ${js.join(" ")} · 끝점 ${ends.join(" ")}');
   }
+  // 진단 — 얇게 깎은 선과 갈래 수를 걷기 **전에** 찍어 둔다. 짝짓기가 변을 복제하기
+  //   전이라야 원래 차수가 보인다.
+  final skelPixels = <int>[...adj.keys];
+  final skelDegrees = <int>[for (final e in adj.entries) e.value.length];
+  final walked = <int>[];
+
   _pairOddVertices(adj, remaining, w);
   var cursor = 0.0;
   for (final start in _traversalStarts(adj)) {
@@ -478,7 +471,20 @@ Map<int, double>? _oneStrokeOrder(
       // 되짚는 자리는 이미 그려졌다 — 시각을 다시 안 매긴다.
       t.putIfAbsent(v, () => cursor);
     }
+    if (debugSkeletonSink != null) walked.addAll(route);
   }
+
+  debugSkeletonSink?.call(
+    DebugSkeleton(
+      width: w,
+      height: h,
+      left: left,
+      top: top,
+      pixels: skelPixels,
+      degrees: skelDegrees,
+      route: walked,
+    ),
+  );
   return t;
 }
 
@@ -990,6 +996,7 @@ class DebugSkeleton {
     required this.top,
     required this.pixels,
     required this.degrees,
+    this.route = const <int>[],
   });
 
   /// 잘라낸 창(ROI)의 크기와, 원본에서의 왼쪽 위 자리.
@@ -1001,6 +1008,18 @@ class DebugSkeleton {
   /// 얇은 선을 이루는 자리들(창 안 좌표의 `y * width + x`)과 각 자리의 갈래 수.
   final List<int> pixels;
   final List<int> degrees;
+
+  /// **걷는 순서 그대로**의 자리 목록 — 되짚는 구간을 포함한다.
+  ///
+  ///   이게 "실선만 놓고 본 그리는 순서"다. 굽기의 나머지(폭으로 퍼뜨리기·평활·양자화)는
+  ///   전부 이 목록에서 파생되므로, 순서를 판단하려면 여기만 보면 된다.
+  ///
+  ///   ⚠️ **[pixels] 와 길이가 다르다.** 되짚는 자리는 여러 번 나오고, 처음 나온 자리만
+  ///   시각을 받는다(`t.putIfAbsent`). 그래서 "새로 잉크가 켜지는 순서" 는 이 목록에서
+  ///   **처음 등장**만 골라낸 것이다 — 화면에서 붓끝이 튀어 보이는 자리가 바로 그 사이다.
+  ///
+  ///   덩어리가 여럿이면 이어 붙인다(덩어리 경계도 되짚기처럼 끊긴 자리로 보인다).
+  final List<int> route;
 }
 
 /// 진단용 — 얇게 깎은 결과를 그대로 넘겨준다. 평소엔 null 이라 비용이 없다.
@@ -1019,12 +1038,22 @@ void _pairOddVertices(
   Map<int, int> remaining,
   int w,
 ) {
+  // ⚠️ **끝점(차수 1)도 홀수다.** 예전엔 여기서 뺐다. 끝점이 정확히 둘이면 그래도 맞는다 —
+  //   그 둘이 경로의 시작과 끝이 되니까. 그런데 **셋 이상이면 홀수 정점이 남아 오일러
+  //   경로가 아예 없고**, 히어홀저가 막혀 조각을 이어 붙인다. 화면에서는 붓끝이 여러 번
+  //   순간이동하고, 전선이 여러 덩어리로 갈린다(T 자에서 3덩어리·중앙값의 7.6배).
+  //
+  //   그래서 전부 담고, **둘만 남기고** 짝짓는다. 남은 둘이 경로의 시작·끝이다.
   final odd = <int>[
     for (final e in adj.entries)
-      if (e.value.length.isOdd && e.value.length != 1) e.key,
+      if (e.value.length.isOdd) e.key,
   ]..sort();
-  // 가까운 것끼리 짝짓는다 — 되짚는 거리가 짧을수록 좋다.
-  final open = [...odd];
+  if (odd.length <= 2) return;
+
+  // 맨 위(= 인덱스 최솟값)는 시작점으로 쓰려고 빼 둔다 — `_traversalStarts` 가 거기서
+  //   출발하므로, 그 자리가 짝지어져 짝수가 되면 경로가 거기서 시작할 수 없다.
+  final open = [...odd]..remove(odd.first);
+  // 가까운 것끼리 짝짓는다 — 되짚는 거리가 짧을수록 좋다. 하나가 남으면 그게 끝점이다.
   while (open.length >= 2) {
     final a = open.removeAt(0);
     var bestI = 0;

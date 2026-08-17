@@ -154,6 +154,67 @@ double _speedRatio(Uint8List order, int bins) {
 ///   올가미는 지금 코드에서 **일부러 빨갛게 둔다** — 그 둘이 사장님이 지적한 결함
 ///   (갈림길에서 위로 되꺾기 · 먼 자리가 먼저 켜지기)의 최소 재현이다.
 ///   수정의 정의는 **T자·올가미를 초록으로 만들면서 나머지를 안 깨는 것**이다.
+/// **실선만 놓고** 잰다 — 걷는 순서에서 새 잉크가 끊긴 자리.
+///
+///   ⚠️ **`_speedRatio` 로는 이걸 못 잰다.** 그건 최대/중앙값이라, 다른 데가 매끄러워져
+///   중앙값이 작아지면 **좋아졌는데 값이 올라간다.** 실제로 끝점 짝짓기를 고쳤을 때
+///   전선이 3덩어리 → 2, 최장 끊김 68 → 23px 로 나아졌는데 비율은 7.6 → 12.2 로 올랐다.
+///   그래서 여기서는 **절대 거리**를 본다.
+///
+///   되돌려 주는 것: (붓끝 최대 걸음 px, 잉크 끊김 수, 최장 끊김 px, 되짚기 배수).
+///
+///   ⚠️ **붓끝 걸음과 잉크 끊김은 다른 것이다.**
+///     · 붓끝 걸음 — 걷기의 이웃한 두 자리 사이 거리. 8-이웃이라 **언제나 √2 이하여야
+///       한다.** 이걸 넘으면 경로가 걷기가 아니라 조각을 이어 붙인 것이다(히어홀저가
+///       막혀서 그렇게 된다). 붓이 공중을 난다.
+///     · 잉크 끊김 — **새로** 켜지는 두 자리 사이 거리. 되짚는 동안엔 새 잉크가 없으므로,
+///       되짚기가 필요한 그림에서는 반드시 생긴다. 없앨 수 없고 **줄일 수만** 있다.
+(double, int, double, double) _lineBreaks(Uint8List mask) {
+  DebugSkeleton? got;
+  debugSkeletonSink = (s) {
+    if (got == null || s.pixels.length > got!.pixels.length) got = s;
+  };
+  bakeOneStrokeOrder(StrokeMask(mask, _w, _h));
+  // ⚠️ 전역이라 반드시 되돌린다.
+  debugSkeletonSink = null;
+
+  final s = got;
+  if (s == null || s.route.isEmpty) return (999, 999, 999, 999);
+  final sw = s.width;
+
+  // 붓끝 — 걷기의 이웃한 두 자리.
+  var penJump = 0.0;
+  for (var i = 1; i < s.route.length; i++) {
+    final a = s.route[i - 1];
+    final b = s.route[i];
+    final dx = (b % sw - a % sw).toDouble();
+    final dy = (b ~/ sw - a ~/ sw).toDouble();
+    final d = math.sqrt(dx * dx + dy * dy);
+    if (d > penJump) penJump = d;
+  }
+
+  final fresh = <int>[];
+  final seen = <int>{};
+  for (final v in s.route) {
+    if (seen.add(v)) fresh.add(v);
+  }
+  var count = 0;
+  var longest = 0.0;
+  for (var i = 1; i < fresh.length; i++) {
+    final a = fresh[i - 1];
+    final b = fresh[i];
+    final dx = (b % sw - a % sw).toDouble();
+    final dy = (b ~/ sw - a ~/ sw).toDouble();
+    final d = math.sqrt(dx * dx + dy * dy);
+    // 8-이웃이면 최대 √2 다. 그보다 멀면 붓끝이 튄 것이다.
+    if (d > 1.5) {
+      count++;
+      if (d > longest) longest = d;
+    }
+  }
+  return (penJump, count, longest, s.route.length / s.pixels.length);
+}
+
 final _shapes = <String, (Uint8List, double, int, double)>{
   '곧은 획': (_stroke(const [(30, 20), (30, 140)], 6), 3, 1, 0),
   '완만한 곡선': (
@@ -257,27 +318,47 @@ void main() {
     );
   });
 
-  // ⚠️ **여기는 지금 빨갛다. 일부러다.**
+  // 길 셋이 한 점에서 만나는 진짜 T 자.
   //
-  //   길 셋이 한 점에서 만나는 진짜 T 자다. 되짚기가 12.0 → 7.6 배로 낮췄지만 아직 4 를
-  //   못 넘는다 — 한쪽 가지를 끝까지 그리고 되짚어 돌아오는 순간 펜 끝이 반대편으로 뛴다.
-  //   **정본 지도에는 이 모양이 없으므로** 사장님 그림에는 영향이 없다. 남의 그림에 이
-  //   패키지를 쓸 때를 위한 과녁이다.
+  //   ⚠️ **이 시험이 `_pairOddVertices` 가 끝점을 세는지를 지키는 자리다.** 예전엔 홀수
+  //   정점을 셀 때 차수 1(끝점)을 뺐다. 끝점이 정확히 둘이면 그래도 맞는다 — 그 둘이
+  //   경로의 시작·끝이 되니까. 그런데 T 자는 끝점이 **셋**이라 홀수 정점이 남고, 오일러
+  //   경로가 아예 없어 히어홀저가 조각을 이어 붙였다. 전선이 3덩어리로 갈리고 한 걸음에
+  //   중앙값의 7.6배를 뛰었다.
+  //
+  //   정본 열 장에는 이 모양이 없다 — 끝점이 전부 둘이다. 그래서 이 결함은 정본으로는
+  //   못 잡고 여기서만 잡힌다.
   test(
-    'T자 — 펜 끝이 순간이동하지 않는다',
+    'T자 — 경로가 진짜 걷기다 · 잉크 끊김은 하나뿐이다',
     () {
-      final baked = bakeOneStrokeOrder(StrokeMask(_tee, _w, _h));
-      expect(baked.length, greaterThan(0));
-      final bins = (baked.length / 5).round().clamp(16, 160);
-      final ratio = _speedRatio(baked.bytes, bins);
-      final (count, gap) = _fronts(baked.bytes, bins);
+      final (penJump, breaks, longest, retrace) = _lineBreaks(_tee);
+
+      // ① **경로가 진짜 걷기여야 한다.** 이게 이 시험의 본론이다. 끝점을 홀수 정점으로
+      //    안 세면 오일러 경로가 없어 히어홀저가 조각을 이어 붙이고, 붓끝이 55px 을
+      //    날아간다(되짚기 1.00배 = 한 번도 안 되돌아왔다는 증거).
       expect(
-        ratio,
-        lessThanOrEqualTo(4),
-        reason: 'T자 — 한 걸음에 중앙값의 ${ratio.toStringAsFixed(1)}배를 뛰었다 '
-            '(전선 $count 덩어리 · 최대 ${gap.toStringAsFixed(0)}px 떨어짐)',
+        penJump,
+        lessThanOrEqualTo(1.5),
+        reason: 'T자 — 붓끝이 한 걸음에 ${penJump.toStringAsFixed(0)}px 을 날았다. '
+            '경로가 걷기가 아니라 조각을 이어 붙인 것이다',
+      );
+
+      // ② 되짚기는 **있어야 한다.** 끝점 셋이면 한 가지를 두 번 지나는 수밖에 없다.
+      expect(retrace, greaterThan(1.0), reason: 'T자 — 되짚기가 없다. 그럴 수 없는 모양이다');
+      expect(
+        retrace,
+        lessThanOrEqualTo(1.5),
+        reason: 'T자 — 선을 ${retrace.toStringAsFixed(2)}배 걸었다. 너무 많이 되짚는다',
+      );
+
+      // ③ 잉크 끊김 하나는 구조적이다 — 되짚는 동안 새 잉크가 없다. 그 길이는 되짚는
+      //    가지의 길이(가장 짧은 가지 ≈ 55)라 더 줄일 수 없다.
+      expect(breaks, lessThanOrEqualTo(1), reason: 'T자 — 잉크가 $breaks 번 끊겼다');
+      expect(
+        longest,
+        lessThanOrEqualTo(56),
+        reason: 'T자 — 최장 끊김 ${longest.toStringAsFixed(0)}px',
       );
     },
-    skip: '길 셋이 한 점에서 만나는 T 자는 아직 못 고쳤다 — 정본 지도에는 없는 모양이다',
   );
 }
